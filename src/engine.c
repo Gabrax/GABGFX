@@ -1,7 +1,9 @@
 #include "engine.h"
 #include "CL/cl.h"
 #include "CL/cl_platform.h"
-#include "raylib.h"
+#include "CL/cl_gl.h"
+#include <stdint.h>
+/*#include "raylib.h"*/
 
 #define GABMATH_IMPLEMENTATION
 #include "gab_math.h"
@@ -14,6 +16,11 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
+#include <glad/glad.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#define GLFW_EXPOSE_NATIVE_WGL
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 
 static cl_platform_id s_platform;
 static cl_device_id s_device;
@@ -26,7 +33,6 @@ static cl_kernel s_clearKernel;
 static cl_kernel s_vertexKernel;
 static cl_kernel s_fragmentKernel;
 
-static cl_mem s_frameBuffer;
 static cl_mem s_depthBuffer;
 static cl_mem s_projectedVertsBuffer;
 static cl_mem s_fragPosBuffer;
@@ -37,10 +43,17 @@ static cl_mem s_trianglesBuffer;
 static cl_mem s_pixelsBuffer;
 static cl_mem s_modelsBuffer;
 
-static Color s_backgroundColor;
+static cl_mem clTexture;
+
+/*static Color s_backgroundColor;*/
 static size_t s_screenResolution[2];
-static Color* s_pixelBuffer = NULL;
-static Texture2D s_outputTexture;
+/*static Color* s_pixelBuffer = NULL;*/
+/*static Texture2D s_outputTexture;*/
+
+static GLFWwindow* s_window = NULL;
+static GLuint gTexture = 0;
+static GLuint quadVAO = 0;
+static GLuint quadProg = 0;
 
 typedef struct 
 {
@@ -80,21 +93,8 @@ typedef struct {
     f4x4 transform;
 } CustomModel;
 
-typedef struct {
-    int triIndex;
-    int minX, maxX, minY, maxY; // bbox inclusive (in pixel coords)
-    f2 v0; f2 v1; f2 v2; // screen-space XY (pixels)
-    float z0, z1, z2; // pv.z (NDC mapped value used in your earlier depth calc)
-    float w0, w1, w2; // clip w (for perspective correction)
-    float invArea; // 1/area (screen-space edge function denom)
-    int modelIndex;
-    int texOffset;
-    int texW;
-    int texH;
-} TriMeta;
-
 static Triangle* s_allTriangles = NULL;
-static Color* s_allTexturePixels = NULL;
+static cl_float4* s_allTexturePixels = NULL;
 static CustomModel* s_Models = NULL;
 
 static size_t s_totalTriangles = 0;
@@ -102,6 +102,9 @@ static size_t s_totalVerts = 0;
 static size_t s_totalTexturePixels = 0;
 static size_t s_triOffset = 0;
 static size_t s_pixOffset = 0;
+
+const char* vs_src = "#version 330 core\nout vec2 uv;\nvoid main(){ vec2 p = vec2((gl_VertexID>>1)*2-1, (gl_VertexID&1)*2-1); gl_Position = vec4(p,0,1); uv = p*0.5 + 0.5; }\n";
+const char* fs_src = "#version 330 core\nin vec2 uv; uniform sampler2D tex; out vec4 outCol; void main(){ outCol = texture(tex, uv); }\n";
 
 static const char* engine_load_kernel(const char* filename)
 {
@@ -117,13 +120,81 @@ static const char* engine_load_kernel(const char* filename)
   return src;
 }
 
+static GLuint compile_shader_program(const char* vs_src, const char* fs_src)
+{
+    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vs, 1, &vs_src, NULL);
+    glCompileShader(vs);
+    GLint ok; glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+    if (!ok) { char buf[1024]; glGetShaderInfoLog(vs, 1024, NULL, buf); printf("VS compile: %s\n", buf); }
+
+    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fs, 1, &fs_src, NULL);
+    glCompileShader(fs);
+    glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+    if (!ok) { char buf[1024]; glGetShaderInfoLog(fs, 1024, NULL, buf); printf("FS compile: %s\n", buf); }
+
+    GLuint prog = glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+    if (!ok) { char buf[1024]; glGetProgramInfoLog(prog, 1024, NULL, buf); printf("Prog link: %s\n", buf); }
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    return prog;
+}
+
 void engine_init(const char* kernel,int width, int height)
 {
+  if (!glfwInit())
+      exit(1);
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+  s_window = glfwCreateWindow(width, height, "GABGFX", NULL, NULL);
+  glfwMakeContextCurrent(s_window);
+
+  if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+      exit(2);
+
+  s_screenResolution[0] = width;
+  s_screenResolution[1] = height;
+
+  glfwSwapInterval(1); // V-sync
+  
+  glGenTextures(1, &gTexture);
+  glBindTexture(GL_TEXTURE_2D, gTexture);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s_screenResolution[0],
+               s_screenResolution[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+
   clGetPlatformIDs(1, &s_platform, NULL);
   clGetDeviceIDs(s_platform, CL_DEVICE_TYPE_GPU, 1, &s_device, NULL);
 
-  s_context = clCreateContext(NULL, 1, &s_device, NULL, NULL, NULL);
+  cl_context_properties props[] = {
+      CL_GL_CONTEXT_KHR, (cl_context_properties)glfwGetWGLContext(s_window),
+      CL_WGL_HDC_KHR,     (cl_context_properties)GetDC(glfwGetWin32Window(s_window)),
+      CL_CONTEXT_PLATFORM, (cl_context_properties)s_platform,
+      0
+  };
+
+  s_context = clCreateContext(props, 1, &s_device, NULL, NULL, NULL);
   s_queue = clCreateCommandQueue(s_context, s_device, 0, NULL);
+
+  clTexture = clCreateFromGLTexture(s_context,
+                                  CL_MEM_WRITE_ONLY,
+                                  GL_TEXTURE_2D,
+                                  0,
+                                  gTexture,
+                                  &s_err);
+  if (s_err != CL_SUCCESS) { fprintf(stderr, "clCreateFromGLTexture failed: %d\n", s_err); exit(1); } 
   
   const char* kernelSource = engine_load_kernel(kernel); 
   s_program = clCreateProgramWithSource(s_context, 1, &kernelSource, NULL, &s_err);
@@ -139,22 +210,19 @@ void engine_init(const char* kernel,int width, int height)
       free(log);
   }
 
-  s_screenResolution[0] = width;
-  s_screenResolution[1] = height;
+  s_clearKernel    = clCreateKernel(s_program, "clear_buffers", &s_err);
+  if (s_err != CL_SUCCESS) { fprintf(stderr, "clCreateKernel clear buffer failed: %d\n", s_err); exit(1); }
+  s_vertexKernel   = clCreateKernel(s_program, "vertex_kernel", &s_err);
+  if (s_err != CL_SUCCESS) { fprintf(stderr, "clCreateKernel vertex failed: %d\n", s_err); exit(1); }
+  s_fragmentKernel = clCreateKernel(s_program, "fragment_kernel", &s_err);
+  if (s_err != CL_SUCCESS) { fprintf(stderr, "clCreateKernel fragment failed: %d\n", s_err); exit(1); }
 
-  s_clearKernel    = clCreateKernel(s_program, "clear_buffers", NULL);
-  s_vertexKernel   = clCreateKernel(s_program, "vertex_kernel", NULL);
-  s_fragmentKernel = clCreateKernel(s_program, "fragment_kernel", NULL);
-
-  s_frameBuffer = clCreateBuffer(s_context, CL_MEM_WRITE_ONLY, 
-                                      s_screenResolution[0] * s_screenResolution[1]
-                                              * sizeof(Color), NULL, NULL);
   s_depthBuffer = clCreateBuffer(s_context, CL_MEM_READ_WRITE,
                                       sizeof(cl_uint) * s_screenResolution[0]
                                                     * s_screenResolution[1],
                                                     NULL, &s_err);
 
-  clSetKernelArg(s_clearKernel, 0, sizeof(cl_mem), &s_frameBuffer);
+  clSetKernelArg(s_clearKernel, 0, sizeof(cl_mem), &clTexture);
   clSetKernelArg(s_clearKernel, 1, sizeof(cl_mem), &s_depthBuffer);
   clSetKernelArg(s_clearKernel, 2, sizeof(int), &s_screenResolution[0]);
   clSetKernelArg(s_clearKernel, 3, sizeof(int), &s_screenResolution[1]);
@@ -163,26 +231,26 @@ void engine_init(const char* kernel,int width, int height)
   clSetKernelArg(s_vertexKernel, 8, sizeof(int), &s_screenResolution[0]);
   clSetKernelArg(s_vertexKernel, 9, sizeof(int), &s_screenResolution[1]);
 
-  clSetKernelArg(s_fragmentKernel, 0, sizeof(cl_mem), &s_frameBuffer);
+  clSetKernelArg(s_fragmentKernel, 0, sizeof(cl_mem), &clTexture);
   clSetKernelArg(s_fragmentKernel, 2, sizeof(int), &s_screenResolution[0]);
   clSetKernelArg(s_fragmentKernel, 3, sizeof(int), &s_screenResolution[1]);
   clSetKernelArg(s_fragmentKernel, 4, sizeof(cl_mem), &s_depthBuffer);
 
-  Image img = GenImageColor(s_screenResolution[0], s_screenResolution[1], s_backgroundColor);
-  s_outputTexture = LoadTextureFromImage(img);
-  free(img.data); // pixel buffer is managed by OpenCL
-
-  s_pixelBuffer = (Color*)malloc(s_screenResolution[0] * s_screenResolution[1] * sizeof(Color));
+  // prosty VAO (nie musimy wypełniać VBO jeśli korzystamy z gl_VertexID)
+  glGenVertexArrays(1, &quadVAO);
+  glBindVertexArray(quadVAO);
+  glBindVertexArray(0);
+  quadProg = compile_shader_program(vs_src, fs_src);
 }
 
-void engine_background_color(Color color)
+void engine_background_color(cl_float4 color)
 {
-  clSetKernelArg(s_clearKernel, 4, sizeof(Color), &color);
+  clSetKernelArg(s_clearKernel, 4, sizeof(cl_float4), &color);
 }
 
-void engine_clear_background()
+bool engine_is_running()
 {
-  clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
+  return !glfwWindowShouldClose(s_window);
 }
 
 void engine_send_camera_matrix()
@@ -193,52 +261,59 @@ void engine_send_camera_matrix()
                        sizeof(f4x4), &s_camera.look_at, 0, NULL, NULL);
 }
 
-void engine_run_rasterizer()
+void engine_start_drawing()
 {
+  clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL,
+                         s_screenResolution, NULL, 0, NULL, NULL);
+
   clEnqueueNDRangeKernel(s_queue, s_vertexKernel, 1, NULL,
                          &s_totalVerts, NULL, 0, NULL, NULL);
-  clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL,
-                         s_screenResolution, NULL, 0, NULL, NULL);
 }
 
-void engine_read_and_display()
+void engine_end_drawing()
 {
-  clEnqueueReadBuffer(s_queue, s_frameBuffer, CL_TRUE, 0,
-                      s_screenResolution[0] * s_screenResolution[1] * sizeof(Color),
-                      s_pixelBuffer, 0, NULL, NULL);
-  clFinish(s_queue);
+  glFinish(); 
 
-  UpdateTexture(s_outputTexture, s_pixelBuffer);
-  BeginDrawing();
-  DrawTexture(s_outputTexture, 0, 0, WHITE);
-  EndDrawing();
+  cl_int err = clEnqueueAcquireGLObjects(s_queue, 1, &clTexture, 0, NULL, NULL);
+  if (err != CL_SUCCESS) { fprintf(stderr, "AcquireGLObjects failed: %d\n", err); }
+
+  err = clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
+  if (err != CL_SUCCESS) { fprintf(stderr, "Fragment kernel failed: %d\n", err); }
+
+  err = clEnqueueReleaseGLObjects(s_queue, 1, &clTexture, 0, NULL, NULL);
+  clFinish(s_queue); 
+
+  glViewport(0, 0, s_screenResolution[0], s_screenResolution[1]);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  glUseProgram(quadProg);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, gTexture);
+  glUniform1i(glGetUniformLocation(quadProg, "tex"), 0);
+
+  glBindVertexArray(quadVAO);
+  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+  glBindVertexArray(0);
+
+  glfwSwapBuffers(s_window);
+  glfwPollEvents();
 }
 
 void engine_close()
 {
-  free(s_pixelBuffer);
+  clFinish(s_queue);
+  if (clTexture) clReleaseMemObject(clTexture);
+  if (s_fragmentKernel) clReleaseKernel(s_fragmentKernel);
+  if (s_program) clReleaseProgram(s_program);
+  if (s_queue) clReleaseCommandQueue(s_queue);
+  if (s_context) clReleaseContext(s_context);
+  if (s_device) clReleaseDevice(s_device); // opcjonalnie
 
-  UnloadTexture(s_outputTexture);
-  CloseWindow();
+  if (quadProg) glDeleteProgram(quadProg);
+  if (quadVAO) glDeleteVertexArrays(1, &quadVAO);
+  if (gTexture) { glDeleteTextures(1, &gTexture); }
 
-  clReleaseDevice(s_device);
-  clReleaseProgram(s_program);
-  clReleaseCommandQueue(s_queue);
-  clReleaseContext(s_context);
-
-  clReleaseKernel(s_clearKernel);
-  clReleaseKernel(s_vertexKernel);
-  clReleaseKernel(s_fragmentKernel);
-
-  clReleaseMemObject(s_frameBuffer);
-  clReleaseMemObject(s_depthBuffer);
-  clReleaseMemObject(s_projectedVertsBuffer);
-  clReleaseMemObject(s_projectionBuffer);
-  clReleaseMemObject(s_viewBuffer);
-  clReleaseMemObject(s_cameraPosBuffer);
-  clReleaseMemObject(s_trianglesBuffer);
-  clReleaseMemObject(s_pixelsBuffer);
-  clReleaseMemObject(s_modelsBuffer);
+  if (s_window) { glfwDestroyWindow(s_window); glfwTerminate(); }
 }
 
 void engine_load_model(const char* filePath, const char* texturePath, f4x4 transform)
@@ -302,30 +377,30 @@ void engine_load_model(const char* filePath, const char* texturePath, f4x4 trans
   aiReleaseImport(scene);
 
   int texWidth = 0, texHeight = 0;
-  Color* pixels = NULL;
+  cl_float4* pixels = NULL;
 
-  if (texturePath) {
-      Image img = LoadImage(texturePath);
-      texWidth = img.width;
-      texHeight = img.height;
-
-      if (texWidth > 0 && texHeight > 0) {
-          pixels = (Color*)malloc(texWidth * texHeight * sizeof(Color));
-          memcpy(pixels, img.data, texWidth * texHeight * sizeof(Color));
-      }
-
-      UnloadImage(img); // free Raylib image memory
-  }
+  /*if (texturePath) {*/
+  /*    Image img = LoadImage(texturePath);*/
+  /*    texWidth = img.width;*/
+  /*    texHeight = img.height;*/
+  /**/
+  /*    if (texWidth > 0 && texHeight > 0) {*/
+  /*        pixels = (Color*)malloc(texWidth * texHeight * sizeof(Color));*/
+  /*        memcpy(pixels, img.data, texWidth * texHeight * sizeof(Color));*/
+  /*    }*/
+  /**/
+  /*    UnloadImage(img); // free Raylib image memory*/
+  /*}*/
 
   for (size_t t = 0; t < numTriangles; t++)
       arrpush(s_allTriangles, triangles[t]);
 
-  if (pixels) {
-      size_t numPixels = texWidth * texHeight;
-      for (size_t p = 0; p < numPixels; p++)
-          arrpush(s_allTexturePixels, pixels[p]);
-      free(pixels);
-  }
+  /*if (pixels) {*/
+  /*    size_t numPixels = texWidth * texHeight;*/
+  /*    for (size_t p = 0; p < numPixels; p++)*/
+  /*        arrpush(s_allTexturePixels, pixels[p]);*/
+  /*    free(pixels);*/
+  /*}*/
 
   CustomModel m;
   m.triangleOffset = s_triOffset;
@@ -355,7 +430,7 @@ void engine_upload_models_data()
         arrlen(s_allTriangles) * sizeof(Triangle), s_allTriangles, &s_err);
 
   s_pixelsBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
-        arrlen(s_allTexturePixels) * sizeof(Color), s_allTexturePixels, &s_err);
+        arrlen(s_allTexturePixels) * sizeof(cl_float4), s_allTexturePixels, &s_err);
 
   s_modelsBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
         arrlen(s_Models) * sizeof(CustomModel), s_Models, &s_err);

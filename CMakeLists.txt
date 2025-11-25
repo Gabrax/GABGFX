@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(GABCL)
+project("${EXE_NAME}")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -34,19 +34,11 @@ FetchContent_Declare(
     assimp
     GIT_REPOSITORY https://github.com/assimp/assimp.git
     GIT_TAG v5.3.0
+    GIT_PROGRESS TRUE
 )
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "Disable Assimp tests" FORCE)
 set(ASSIMP_BUILD_DOCS OFF CACHE BOOL "Disable Assimp documentation" FORCE)
 
-FetchContent_Declare(
-    raylib
-    GIT_REPOSITORY "https://github.com/raysan5/raylib.git"
-    GIT_TAG "master"
-    GIT_PROGRESS TRUE
-)
-set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
@@ -55,19 +47,24 @@ FetchContent_Declare(
   GIT_TAG        main
   GIT_PROGRESS TRUE
 )
-
 set(OPENCL_SDK_BUILD_SAMPLES OFF CACHE BOOL "Disable SDK samples" FORCE)
 set(OPENCL_SDK_BUILD_OPENGL_SAMPLES OFF CACHE BOOL "Disable OpenGL samples" FORCE)
 set(OPENCL_SDK_BUILD_VULKAN_SAMPLES OFF CACHE BOOL "Disable Vulkan samples" FORCE)
 set(OPENCL_SDK_TEST_SAMPLES OFF CACHE BOOL "Disable sample tests" FORCE)
 set(OPENCL_SDK_FETCH_DEPENDENCIES ON CACHE BOOL "Fetch dependencies automatically" FORCE)
 
-FetchContent_MakeAvailable(raylib OpenCL_SDK assimp)
+FetchContent_MakeAvailable(OpenCL_SDK assimp)
 
 add_subdirectory(vendor/stb_ds)
+add_subdirectory(vendor/glfw-3.3.2)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(vendor/glad)
 
 file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 target_sources("${CMAKE_PROJECT_NAME}" PRIVATE ${MY_SOURCES})
 
-target_link_libraries("${CMAKE_PROJECT_NAME}" PRIVATE assimp raylib OpenCL::OpenCL stb_ds)
+target_link_libraries("${CMAKE_PROJECT_NAME}" PRIVATE glfw glad assimp OpenCL::OpenCL stb_ds)

@@ -28,16 +28,21 @@ typedef struct {
 } CustomModel;
 
 __kernel void clear_buffers(
-    __global Pixel* pixels,
+    write_only image2d_t outImage,
     __global float* depth,
     int width, int height,
-    Pixel color)
+    float4 color)   // color w 0..1
 {
     int x = get_global_id(0);
     int y = get_global_id(1);
     if (x >= width || y >= height) return;
     int idx = y * width + x;
-    pixels[idx] = color;
+
+    // zapisz kolor (float4) -> obraz (konwersja do RGBA8 nastąpi automatycznie)
+    int2 coord = (int2)(x, y);
+    write_imagef(outImage, coord, color);
+
+    // reset głębokości
     depth[idx] = FLT_MAX;
 }
 
@@ -119,7 +124,7 @@ inline Pixel sample_texture(__global Pixel* texture, int texWidth, int texHeight
 }
 
 __kernel void fragment_kernel(
-    __global Pixel* pixels,
+    write_only image2d_t outImage,
     __global float4* projVerts,
     int width,
     int height,
@@ -206,12 +211,9 @@ __kernel void fragment_kernel(
                     float light_intensity = fmax(0.1f, dot(norm, dirToLight));
                     float3 finalColor = texColor * light_intensity;
 
-                    pixels[idx] = (Pixel){
-                        (uchar)(finalColor.x * 255),
-                        (uchar)(finalColor.y * 255),
-                        (uchar)(finalColor.z * 255),
-                        255
-                    };
+                    float4 outCol = (float4)(finalColor.x, finalColor.y, finalColor.z, 1.0f);
+                    int2 coord = (int2)(x, height - 1 - y);
+                    write_imagef(outImage, coord, outCol);
 
                     depthBuffer[idx] = depth;
                 }
