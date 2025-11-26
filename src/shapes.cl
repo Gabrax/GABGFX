@@ -38,11 +38,9 @@ __kernel void clear_buffers(
     if (x >= width || y >= height) return;
     int idx = y * width + x;
 
-    // zapisz kolor (float4) -> obraz (konwersja do RGBA8 nastąpi automatycznie)
     int2 coord = (int2)(x, y);
     write_imagef(outImage, coord, color);
 
-    // reset głębokości
     depth[idx] = FLT_MAX;
 }
 

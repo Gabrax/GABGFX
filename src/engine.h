@@ -23,10 +23,11 @@ typedef enum {
 void engine_init(const char* kernel,int width, int height);
 void engine_background_color(cl_float4 color);
 bool engine_is_running();
-void engine_send_camera_matrix();
 void engine_start_drawing();
 void engine_end_drawing();
 void engine_close();
+
+bool engine_key_down(int key);
 
 void engine_load_model(const char* filePath,const char* texturePath,f4x4 transform);
 void engine_upload_models_data();
@@ -35,7 +36,7 @@ void engine_free_all_models();
 void engine_init_camera(int width, int height, float fov, float near_plane, float far_plane);
 
 void engine_process_camera_keys(Movement direction);
-void engine_update_camera(float mouseX, float mouseY, bool constrainPitch);
+void engine_update_camera();
 
 
 

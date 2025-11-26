@@ -3,7 +3,6 @@
 #include "CL/cl_platform.h"
 #include "CL/cl_gl.h"
 #include <stdint.h>
-/*#include "raylib.h"*/
 
 #define GABMATH_IMPLEMENTATION
 #include "gab_math.h"
@@ -33,6 +32,7 @@ static cl_kernel s_clearKernel;
 static cl_kernel s_vertexKernel;
 static cl_kernel s_fragmentKernel;
 
+static cl_mem s_frameBuffer;
 static cl_mem s_depthBuffer;
 static cl_mem s_projectedVertsBuffer;
 static cl_mem s_fragPosBuffer;
@@ -43,12 +43,7 @@ static cl_mem s_trianglesBuffer;
 static cl_mem s_pixelsBuffer;
 static cl_mem s_modelsBuffer;
 
-static cl_mem clTexture;
-
-/*static Color s_backgroundColor;*/
 static size_t s_screenResolution[2];
-/*static Color* s_pixelBuffer = NULL;*/
-/*static Texture2D s_outputTexture;*/
 
 static GLFWwindow* s_window = NULL;
 static GLuint gTexture = 0;
@@ -122,28 +117,28 @@ static const char* engine_load_kernel(const char* filename)
 
 static GLuint compile_shader_program(const char* vs_src, const char* fs_src)
 {
-    GLuint vs = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vs, 1, &vs_src, NULL);
-    glCompileShader(vs);
-    GLint ok; glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
-    if (!ok) { char buf[1024]; glGetShaderInfoLog(vs, 1024, NULL, buf); printf("VS compile: %s\n", buf); }
+  GLuint vs = glCreateShader(GL_VERTEX_SHADER);
+  glShaderSource(vs, 1, &vs_src, NULL);
+  glCompileShader(vs);
+  GLint ok; glGetShaderiv(vs, GL_COMPILE_STATUS, &ok);
+  if (!ok) { char buf[1024]; glGetShaderInfoLog(vs, 1024, NULL, buf); printf("VS compile: %s\n", buf); }
 
-    GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fs, 1, &fs_src, NULL);
-    glCompileShader(fs);
-    glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
-    if (!ok) { char buf[1024]; glGetShaderInfoLog(fs, 1024, NULL, buf); printf("FS compile: %s\n", buf); }
+  GLuint fs = glCreateShader(GL_FRAGMENT_SHADER);
+  glShaderSource(fs, 1, &fs_src, NULL);
+  glCompileShader(fs);
+  glGetShaderiv(fs, GL_COMPILE_STATUS, &ok);
+  if (!ok) { char buf[1024]; glGetShaderInfoLog(fs, 1024, NULL, buf); printf("FS compile: %s\n", buf); }
 
-    GLuint prog = glCreateProgram();
-    glAttachShader(prog, vs);
-    glAttachShader(prog, fs);
-    glLinkProgram(prog);
-    glGetProgramiv(prog, GL_LINK_STATUS, &ok);
-    if (!ok) { char buf[1024]; glGetProgramInfoLog(prog, 1024, NULL, buf); printf("Prog link: %s\n", buf); }
+  GLuint prog = glCreateProgram();
+  glAttachShader(prog, vs);
+  glAttachShader(prog, fs);
+  glLinkProgram(prog);
+  glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+  if (!ok) { char buf[1024]; glGetProgramInfoLog(prog, 1024, NULL, buf); printf("Prog link: %s\n", buf); }
 
-    glDeleteShader(vs);
-    glDeleteShader(fs);
-    return prog;
+  glDeleteShader(vs);
+  glDeleteShader(fs);
+  return prog;
 }
 
 void engine_init(const char* kernel,int width, int height)
@@ -156,6 +151,17 @@ void engine_init(const char* kernel,int width, int height)
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
   s_window = glfwCreateWindow(width, height, "GABGFX", NULL, NULL);
+
+  glfwSetInputMode(s_window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+  GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+  const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+  int xpos = (mode->width - width) / 2;
+  int ypos = (mode->height - height) / 2;
+
+  glfwSetWindowPos(s_window, xpos, ypos);
+
   glfwMakeContextCurrent(s_window);
 
   if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -188,7 +194,7 @@ void engine_init(const char* kernel,int width, int height)
   s_context = clCreateContext(props, 1, &s_device, NULL, NULL, NULL);
   s_queue = clCreateCommandQueue(s_context, s_device, 0, NULL);
 
-  clTexture = clCreateFromGLTexture(s_context,
+  s_frameBuffer = clCreateFromGLTexture(s_context,
                                   CL_MEM_WRITE_ONLY,
                                   GL_TEXTURE_2D,
                                   0,
@@ -222,7 +228,7 @@ void engine_init(const char* kernel,int width, int height)
                                                     * s_screenResolution[1],
                                                     NULL, &s_err);
 
-  clSetKernelArg(s_clearKernel, 0, sizeof(cl_mem), &clTexture);
+  clSetKernelArg(s_clearKernel, 0, sizeof(cl_mem), &s_frameBuffer);
   clSetKernelArg(s_clearKernel, 1, sizeof(cl_mem), &s_depthBuffer);
   clSetKernelArg(s_clearKernel, 2, sizeof(int), &s_screenResolution[0]);
   clSetKernelArg(s_clearKernel, 3, sizeof(int), &s_screenResolution[1]);
@@ -231,12 +237,11 @@ void engine_init(const char* kernel,int width, int height)
   clSetKernelArg(s_vertexKernel, 8, sizeof(int), &s_screenResolution[0]);
   clSetKernelArg(s_vertexKernel, 9, sizeof(int), &s_screenResolution[1]);
 
-  clSetKernelArg(s_fragmentKernel, 0, sizeof(cl_mem), &clTexture);
+  clSetKernelArg(s_fragmentKernel, 0, sizeof(cl_mem), &s_frameBuffer);
   clSetKernelArg(s_fragmentKernel, 2, sizeof(int), &s_screenResolution[0]);
   clSetKernelArg(s_fragmentKernel, 3, sizeof(int), &s_screenResolution[1]);
   clSetKernelArg(s_fragmentKernel, 4, sizeof(cl_mem), &s_depthBuffer);
 
-  // prosty VAO (nie musimy wypełniać VBO jeśli korzystamy z gl_VertexID)
   glGenVertexArrays(1, &quadVAO);
   glBindVertexArray(quadVAO);
   glBindVertexArray(0);
@@ -253,16 +258,13 @@ bool engine_is_running()
   return !glfwWindowShouldClose(s_window);
 }
 
-void engine_send_camera_matrix()
-{
-  clEnqueueWriteBuffer(s_queue, s_cameraPosBuffer, CL_TRUE, 0,
-                       sizeof(f3), &s_camera.Position, 0, NULL, NULL);
-  clEnqueueWriteBuffer(s_queue, s_viewBuffer, CL_TRUE, 0,
-                       sizeof(f4x4), &s_camera.look_at, 0, NULL, NULL);
-}
-
 void engine_start_drawing()
 {
+  glFinish(); 
+
+  s_err = clEnqueueAcquireGLObjects(s_queue, 1, &s_frameBuffer, 0, NULL, NULL);
+  if (s_err != CL_SUCCESS) { fprintf(stderr, "AcquireGLObjects failed: %d\n", s_err); }
+
   clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL,
                          s_screenResolution, NULL, 0, NULL, NULL);
 
@@ -272,19 +274,11 @@ void engine_start_drawing()
 
 void engine_end_drawing()
 {
-  glFinish(); 
+  s_err = clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
+  if (s_err != CL_SUCCESS) { fprintf(stderr, "Fragment kernel failed: %d\n", s_err); }
 
-  cl_int err = clEnqueueAcquireGLObjects(s_queue, 1, &clTexture, 0, NULL, NULL);
-  if (err != CL_SUCCESS) { fprintf(stderr, "AcquireGLObjects failed: %d\n", err); }
-
-  err = clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
-  if (err != CL_SUCCESS) { fprintf(stderr, "Fragment kernel failed: %d\n", err); }
-
-  err = clEnqueueReleaseGLObjects(s_queue, 1, &clTexture, 0, NULL, NULL);
-  clFinish(s_queue); 
-
-  glViewport(0, 0, s_screenResolution[0], s_screenResolution[1]);
-  glClear(GL_COLOR_BUFFER_BIT);
+  s_err = clEnqueueReleaseGLObjects(s_queue, 1, &s_frameBuffer, 0, NULL, NULL);
+  clFinish(s_queue);
 
   glUseProgram(quadProg);
   glActiveTexture(GL_TEXTURE0);
@@ -302,7 +296,7 @@ void engine_end_drawing()
 void engine_close()
 {
   clFinish(s_queue);
-  if (clTexture) clReleaseMemObject(clTexture);
+  if (s_frameBuffer) clReleaseMemObject(s_frameBuffer);
   if (s_fragmentKernel) clReleaseKernel(s_fragmentKernel);
   if (s_program) clReleaseProgram(s_program);
   if (s_queue) clReleaseCommandQueue(s_queue);
@@ -314,6 +308,11 @@ void engine_close()
   if (gTexture) { glDeleteTextures(1, &gTexture); }
 
   if (s_window) { glfwDestroyWindow(s_window); glfwTerminate(); }
+}
+
+bool engine_key_down(int key)
+{
+  return glfwGetKey(s_window, key) == GLFW_PRESS;
 }
 
 void engine_load_model(const char* filePath, const char* texturePath, f4x4 transform)
@@ -538,8 +537,13 @@ void engine_process_camera_keys(Movement direction)
   if (direction == LEFT) s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Right, velocity));
   if (direction == RIGHT) s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Right, -velocity));
 }
-void engine_update_camera(float mouseX, float mouseY, bool constrainPitch)
+void engine_update_camera()
 {
+  double mouseX, mouseY;
+  glfwGetCursorPos(s_window, &mouseX, &mouseY);
+
+  bool constrainPitch = true;
+
   float xoffset, yoffset;
   if (s_camera.firstMouse)
   {
@@ -576,4 +580,9 @@ void engine_update_camera(float mouseX, float mouseY, bool constrainPitch)
   s_camera.Up    = f3Norm(f3Cross(s_camera.Right, s_camera.Front));
 
   s_camera.look_at = MatLookAt(s_camera.Position, f3Add(s_camera.Position, s_camera.Front), s_camera.Up);
+
+  clEnqueueWriteBuffer(s_queue, s_cameraPosBuffer, CL_TRUE, 0,
+                       sizeof(f3), &s_camera.Position, 0, NULL, NULL);
+  clEnqueueWriteBuffer(s_queue, s_viewBuffer, CL_TRUE, 0,
+                       sizeof(f4x4), &s_camera.look_at, 0, NULL, NULL);
 }
