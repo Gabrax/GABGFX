@@ -1,10 +1,10 @@
-#include "engine.h"
+#include "rasterizer.h"
 #include "CL/cl.h"
 #include "CL/cl_platform.h"
 #include "raylib.h"
 
 #define GABMATH_IMPLEMENTATION
-#include "gab_math.h"
+#include "../gab_math.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 #include <assimp/cimport.h>
@@ -80,19 +80,6 @@ typedef struct {
     f4x4 transform;
 } CustomModel;
 
-typedef struct {
-    int triIndex;
-    int minX, maxX, minY, maxY; // bbox inclusive (in pixel coords)
-    f2 v0; f2 v1; f2 v2; // screen-space XY (pixels)
-    float z0, z1, z2; // pv.z (NDC mapped value used in your earlier depth calc)
-    float w0, w1, w2; // clip w (for perspective correction)
-    float invArea; // 1/area (screen-space edge function denom)
-    int modelIndex;
-    int texOffset;
-    int texW;
-    int texH;
-} TriMeta;
-
 static Triangle* s_allTriangles = NULL;
 static Color* s_allTexturePixels = NULL;
 static CustomModel* s_Models = NULL;
@@ -103,7 +90,7 @@ static size_t s_totalTexturePixels = 0;
 static size_t s_triOffset = 0;
 static size_t s_pixOffset = 0;
 
-static const char* engine_load_kernel(const char* filename)
+static const char* rasterizer_load_kernel(const char* filename)
 {
   FILE* f = fopen(filename, "rb");
   if(!f) { printf("Cannot open kernel file.\n"); return NULL; }
@@ -117,15 +104,19 @@ static const char* engine_load_kernel(const char* filename)
   return src;
 }
 
-void engine_init(const char* kernel,int width, int height)
+void rasterizer_init(int width, int height)
 {
+  InitWindow(width, height, "GABCL");
+  SetTargetFPS(60);
+  DisableCursor();
+
   clGetPlatformIDs(1, &s_platform, NULL);
   clGetDeviceIDs(s_platform, CL_DEVICE_TYPE_GPU, 1, &s_device, NULL);
 
   s_context = clCreateContext(NULL, 1, &s_device, NULL, NULL, NULL);
   s_queue = clCreateCommandQueue(s_context, s_device, 0, NULL);
   
-  const char* kernelSource = engine_load_kernel(kernel); 
+  const char* kernelSource = rasterizer_load_kernel("src/rasterizer/rasterizer.cl"); 
   s_program = clCreateProgramWithSource(s_context, 1, &kernelSource, NULL, &s_err);
   if (s_err != CL_SUCCESS) { printf("Error creating program: %d\n", s_err); }
 
@@ -139,8 +130,8 @@ void engine_init(const char* kernel,int width, int height)
       free(log);
   }
 
-  s_screenResolution[0] = width;
-  s_screenResolution[1] = height;
+  s_screenResolution[0] = GetScreenWidth();
+  s_screenResolution[1] = GetScreenHeight();
 
   s_clearKernel    = clCreateKernel(s_program, "clear_buffers", NULL);
   s_vertexKernel   = clCreateKernel(s_program, "vertex_kernel", NULL);
@@ -175,34 +166,22 @@ void engine_init(const char* kernel,int width, int height)
   s_pixelBuffer = (Color*)malloc(s_screenResolution[0] * s_screenResolution[1] * sizeof(Color));
 }
 
-void engine_background_color(Color color)
+void rasterizer_background_color(Color color)
 {
   clSetKernelArg(s_clearKernel, 4, sizeof(Color), &color);
 }
 
-void engine_clear_background()
+void rasterizer_clear_background()
 {
   clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
 }
 
-void engine_send_camera_matrix()
-{
-  clEnqueueWriteBuffer(s_queue, s_cameraPosBuffer, CL_TRUE, 0,
-                       sizeof(f3), &s_camera.Position, 0, NULL, NULL);
-  clEnqueueWriteBuffer(s_queue, s_viewBuffer, CL_TRUE, 0,
-                       sizeof(f4x4), &s_camera.look_at, 0, NULL, NULL);
-}
-
-void engine_run_rasterizer()
+void rasterizer_draw()
 {
   clEnqueueNDRangeKernel(s_queue, s_vertexKernel, 1, NULL,
                          &s_totalVerts, NULL, 0, NULL, NULL);
   clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL,
                          s_screenResolution, NULL, 0, NULL, NULL);
-}
-
-void engine_read_and_display()
-{
   clEnqueueReadBuffer(s_queue, s_frameBuffer, CL_TRUE, 0,
                       s_screenResolution[0] * s_screenResolution[1] * sizeof(Color),
                       s_pixelBuffer, 0, NULL, NULL);
@@ -214,7 +193,7 @@ void engine_read_and_display()
   EndDrawing();
 }
 
-void engine_close()
+void rasterizer_close()
 {
   free(s_pixelBuffer);
 
@@ -241,7 +220,7 @@ void engine_close()
   clReleaseMemObject(s_modelsBuffer);
 }
 
-void engine_load_model(const char* filePath, const char* texturePath, f4x4 transform)
+void rasterizer_load_model(const char* filePath, const char* texturePath, f4x4 transform)
 {
   const struct aiScene* scene = aiImportFile(
       filePath,
@@ -346,7 +325,7 @@ void engine_load_model(const char* filePath, const char* texturePath, f4x4 trans
   arrfree(triangles);
 }
 
-void engine_upload_models_data()
+void rasterizer_upload_models_data()
 {  
   int numModels = arrlen(s_Models);
   s_totalVerts = s_totalTriangles * 3;
@@ -377,7 +356,7 @@ void engine_upload_models_data()
   clSetKernelArg(s_fragmentKernel, 9, sizeof(cl_mem), &s_pixelsBuffer);
 }
 
-void engine_print_model_data()
+void rasterizer_print_model_data()
 {
     for (size_t m = 0; m < arrlen(s_Models); m++) {
         CustomModel* model = &s_Models[m];
@@ -409,7 +388,7 @@ void engine_print_model_data()
     }
 }
 
-void engine_free_all_models()
+void rasterizer_free_all_models()
 {
   arrfree(s_allTriangles);
   arrfree(s_allTexturePixels);
@@ -420,8 +399,11 @@ void engine_free_all_models()
   s_totalTexturePixels = 0;
 }
 
-void engine_init_camera(int width, int height, float fov, float near_plane, float far_plane)
+void rasterizer_init_camera(float fov, float near_plane, float far_plane)
 {
+  float width = s_screenResolution[0];
+  float height = s_screenResolution[1];
+
   s_camera.Position = (f3){0.0f, 0.0f, 0.0f};
   s_camera.WorldUp = (f3){0.0f, 1.0f, 0.0f};
   s_camera.Front = (f3){0.0f, 0.0f, 1.0f};
@@ -454,7 +436,7 @@ void engine_init_camera(int width, int height, float fov, float near_plane, floa
   clEnqueueWriteBuffer(s_queue, s_projectionBuffer, CL_TRUE, 0, sizeof(f4x4), &s_camera.proj, 0, NULL, NULL);
 }
 
-void engine_process_camera_keys(Movement direction)
+void rasterizer_process_camera_keys(Movement direction)
 {
   float velocity = s_camera.speed * s_camera.deltaTime;
 
@@ -463,8 +445,12 @@ void engine_process_camera_keys(Movement direction)
   if (direction == LEFT) s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Right, velocity));
   if (direction == RIGHT) s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Right, -velocity));
 }
-void engine_update_camera(float mouseX, float mouseY, bool constrainPitch)
+void rasterizer_update_camera()
 {
+  float mouseX = GetMouseX();
+  float mouseY = GetMouseY();
+  bool constrainPitch = true;
+
   float xoffset, yoffset;
   if (s_camera.firstMouse)
   {
@@ -501,4 +487,9 @@ void engine_update_camera(float mouseX, float mouseY, bool constrainPitch)
   s_camera.Up    = f3Norm(f3Cross(s_camera.Right, s_camera.Front));
 
   s_camera.look_at = MatLookAt(s_camera.Position, f3Add(s_camera.Position, s_camera.Front), s_camera.Up);
+
+  clEnqueueWriteBuffer(s_queue, s_cameraPosBuffer, CL_TRUE, 0,
+                       sizeof(f3), &s_camera.Position, 0, NULL, NULL);
+  clEnqueueWriteBuffer(s_queue, s_viewBuffer, CL_TRUE, 0,
+                       sizeof(f4x4), &s_camera.look_at, 0, NULL, NULL);
 }
