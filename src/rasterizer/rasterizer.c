@@ -42,8 +42,7 @@ static size_t s_screenResolution[2];
 static Color* s_pixelBuffer = NULL;
 static Texture2D s_outputTexture;
 
-typedef struct 
-{
+typedef struct {
   f3 Position;
   f3 Front;
   f3 Up;
@@ -64,20 +63,19 @@ typedef struct
   float lastY;
   bool firstMouse;
   float deltaTime;
-
 } CustomCamera;
 
 static CustomCamera s_camera = {0};
 
 typedef struct {
-    int triangleOffset;
-    int triangleCount;
-    int vertexOffset;
-    int vertexCount;
-    int pixelOffset;
-    int texWidth;
-    int texHeight;
-    f4x4 transform;
+  int triangleOffset;
+  int triangleCount;
+  int vertexOffset;
+  int vertexCount;
+  int pixelOffset;
+  int texWidth;
+  int texHeight;
+  f4x4 transform;
 } CustomModel;
 
 static Triangle* s_allTriangles = NULL;
@@ -106,7 +104,7 @@ static const char* rasterizer_load_kernel(const char* filename)
 
 void rasterizer_init(int width, int height)
 {
-  InitWindow(width, height, "GABCL");
+  InitWindow(width, height, "Rasterizer");
   SetTargetFPS(60);
   DisableCursor();
 
@@ -436,7 +434,7 @@ void rasterizer_init_camera(float fov, float near_plane, float far_plane)
   clEnqueueWriteBuffer(s_queue, s_projectionBuffer, CL_TRUE, 0, sizeof(f4x4), &s_camera.proj, 0, NULL, NULL);
 }
 
-void rasterizer_process_camera_keys(Movement direction)
+void rasterizer_move_camera(Movement direction)
 {
   float velocity = s_camera.speed * s_camera.deltaTime;
 

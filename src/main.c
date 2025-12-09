@@ -1,37 +1,38 @@
-#include "rasterizer/rasterizer.h"
+#include "raycaster/raycaster.h"
 #include "raylib.h"
 
-#include <stdio.h>
+const char* map =
+"1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, \
+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, \
+1, 0, 0, 0, 0, 3, 0, 0, 0, 0, 1, \
+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, \
+1, 0, 2, 0, 4, 4, 0, 0, 0, 0, 1, \
+1, 0, 0, 0, 4, 0, 0, 0, 0, 0, 1, \
+1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 1, \
+1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 1, \
+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, \
+1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, \
+1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,";
+
+const char* sprites_data =
+"6.0, 8.5, 0, 0, 0, 0,0, 0, 0, 10,\
+3.5, 6.5, 0, 0, 0, 0,0, 0, 0, 10,\
+5.5, 5.5, 0, 0, 0, 0,0, 0, 0, 9,\
+7.5, 1.5, 0, 0, 0, 0,0, 0, 0, 8,\
+3.5, 2.5, 0, 0, 0, 0,0, 0, 0, 11";
 
 int main()
 {
-  rasterizer_init(800,600);
-  rasterizer_background_color((Color){0,0,0,255});
+  raycaster_load_map(map,sprites_data);
 
-  rasterizer_init_camera(90.0f,0.01f,1000.0f);
+  raycaster_init(800, 600);
 
-  f4x4 transform = MatTransform((f3){1.0f,0.0f,3.0f},(f3){0.0f,180.0f,0.0f},(f3){0.1f,0.1f,0.1f}); 
-  rasterizer_load_model("res/rayman_2_mdl.obj","res/Rayman.png",transform);
-
-  rasterizer_upload_models_data();
-
-  while (!WindowShouldClose())
+  while(!WindowShouldClose())
   {
-    rasterizer_clear_background();
+    BeginDrawing();
 
-    if (IsKeyDown(KEY_W)) rasterizer_process_camera_keys(FORWARD);
-    if (IsKeyDown(KEY_S)) rasterizer_process_camera_keys(BACKWARD);
-    if (IsKeyDown(KEY_A)) rasterizer_process_camera_keys(LEFT);
-    if (IsKeyDown(KEY_D)) rasterizer_process_camera_keys(RIGHT);
-    rasterizer_update_camera();
-
-    rasterizer_draw();
-
-    printf("%d\n",GetFPS());
+    EndDrawing();
   }
-
-  rasterizer_free_all_models();
-  rasterizer_close();
 
   return 0;
 }
