@@ -11,27 +11,40 @@
 #include "CL/cl.h"
 #include "CL/cl_platform.h"
 
-typedef struct Sprite {
+typedef struct SpriteData {
   double x;
   double y;
-  double vx; // Velocity in X direction
-  double vy; // Velocity in Y direction
-  double dir_x; // Velocity in X direction
-  double dir_y; // Velocity in Y direction
+  double vx;
+  double vy;
+  double dir_x;
+  double dir_y;
   double is_projectile;
   double is_ui;
   double is_destroyed;
   float texture;
-} Sprite;
+} SpriteData;
 
-typedef struct Map {
+typedef struct GameData {
   size_t map_data_size;
   uint8_t* map_data;
-  Sprite* sprites;
+  SpriteData* sprites;
 } GameData;
 
-static GameData s_map;
-static int s_map_dim_size;
+typedef struct {
+  int pixelOffset;
+  int texWidth;
+  int texHeight;
+} Sprite;
+
+typedef struct Player {
+  f2 pos;
+  f2 dir;
+  f2 projection;
+  float movespeed;
+  bool is_shooting;
+  size_t sprite_index;
+  size_t frame_counter;
+} Player;
 
 static cl_platform_id s_platform;
 static cl_device_id s_device;
@@ -45,19 +58,27 @@ static cl_kernel s_fragmentKernel;
 
 static cl_mem s_frameBuffer;
 static cl_mem s_depthBuffer;
-static cl_mem s_projectedVertsBuffer;
-static cl_mem s_fragPosBuffer;
-static cl_mem s_projectionBuffer;
-static cl_mem s_viewBuffer;
-static cl_mem s_cameraPosBuffer;
-static cl_mem s_trianglesBuffer;
 static cl_mem s_pixelsBuffer;
-static cl_mem s_modelsBuffer;
+static cl_mem s_playerBuffer;
+static cl_mem s_game_dataBuffer;
+static cl_mem s_spritesBuffer;
+
+static GameData s_GameData;
+static int s_map_dim_size;
 
 static Color s_backgroundColor;
 static size_t s_screenResolution[2];
 static Color* s_pixelBuffer = NULL;
 static Texture2D s_outputTexture;
+static Color* s_allTexturePixels = NULL;
+
+static Sprite* s_Sprites = NULL;
+
+static size_t s_totalTexturePixels = 0;
+static size_t s_triOffset = 0;
+static size_t s_pixOffset = 0;
+
+static Player s_Player;
 
 static inline const char* raycaster_load_kernel(const char* filename)
 {
@@ -85,7 +106,7 @@ void raycaster_init(int width, int height)
   s_context = clCreateContext(NULL, 1, &s_device, NULL, NULL, NULL);
   s_queue = clCreateCommandQueue(s_context, s_device, 0, NULL);
   
-  const char* kernelSource = raycaster_load_kernel("src/rasterizer/rasterizer.cl"); 
+  const char* kernelSource = raycaster_load_kernel("src/raycaster/raycaster.cl"); 
   s_program = clCreateProgramWithSource(s_context, 1, &kernelSource, NULL, &s_err);
   if (s_err != CL_SUCCESS) { printf("Error creating program: %d\n", s_err); }
 
@@ -131,6 +152,26 @@ void raycaster_init(int width, int height)
   s_pixelBuffer = (Color*)malloc(s_screenResolution[0] * s_screenResolution[1] * sizeof(Color));
 }
 
+void raycaster_clear_background()
+{
+  clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
+}
+
+void raycaster_draw()
+{
+  clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL,
+                         s_screenResolution, NULL, 0, NULL, NULL);
+  clEnqueueReadBuffer(s_queue, s_frameBuffer, CL_TRUE, 0,
+                      s_screenResolution[0] * s_screenResolution[1] * sizeof(Color),
+                      s_pixelBuffer, 0, NULL, NULL);
+  clFinish(s_queue);
+
+  UpdateTexture(s_outputTexture, s_pixelBuffer);
+  BeginDrawing();
+  DrawTexture(s_outputTexture, 0, 0, WHITE);
+  EndDrawing();
+}
+
 void raycaster_close()
 {
   free(s_pixelBuffer);
@@ -148,61 +189,110 @@ void raycaster_close()
 
   clReleaseMemObject(s_frameBuffer);
   clReleaseMemObject(s_depthBuffer);
-  clReleaseMemObject(s_projectedVertsBuffer);
-  clReleaseMemObject(s_projectionBuffer);
-  clReleaseMemObject(s_viewBuffer);
-  clReleaseMemObject(s_cameraPosBuffer);
-  clReleaseMemObject(s_trianglesBuffer);
-  clReleaseMemObject(s_pixelsBuffer);
-  clReleaseMemObject(s_modelsBuffer);
 }
 
-void raycaster_load_map(const char* map_data, const char* sprites_data)
-{ 
-  size_t len = strlen(map_data);
-  memset(&s_map, 0, sizeof(s_map));
+void raycaster_load_map(const char* map_data, const char* sprites[],size_t sprites_count,const char* sprites_data[],size_t sprites_data_count)
+{
+  memset(&s_GameData, 0, sizeof(s_GameData));
 
-  for(size_t i=0;i<len;++i)
+  for (size_t i = 0; map_data[i]; ++i)
+      if (isdigit((unsigned char)map_data[i]))
+          arrpush(s_GameData.map_data, map_data[i] - '0');
+
+  s_GameData.map_data_size = arrlen(s_GameData.map_data);
+
+  int dim = (int)sqrt((double)s_GameData.map_data_size);
+  if (dim * dim != s_GameData.map_data_size)
   {
-    if(isdigit(map_data[i])) arrpush(s_map.map_data,map_data[i]);
+      fprintf(stderr, "Map has to be square!\n");
+      exit(EXIT_FAILURE);
   }
-  
-  s_map.map_data_size = arrlen(s_map.map_data);
 
-  double root = sqrt((double)s_map.map_data_size);
-  int dim = (int)root;
+  s_map_dim_size = dim;
 
-  if (dim * dim != s_map.map_data_size)
+  for (size_t i = 0; i < sprites_data_count; ++i)
   {
-    fprintf(stderr, "Map has to be square!");
-    exit(EXIT_FAILURE);
-  }
- 
-  s_map_dim_size = sqrt(s_map.map_data_size);
+    const char* p = sprites_data[i];
 
-  const char* p = sprites_data; 
-  while (*p)
+    while (*p)
+    {
+      SpriteData sprite = {0};
+
+      int parsed = sscanf(
+          p,
+          " %lf , %lf , %lf , %lf , %lf , %lf , %lf , %lf , %lf , %f",
+          &sprite.x, &sprite.y,
+          &sprite.vx, &sprite.vy,
+          &sprite.dir_x, &sprite.dir_y,
+          &sprite.is_projectile,
+          &sprite.is_ui,
+          &sprite.is_destroyed,
+          &sprite.texture
+      );
+
+      if (parsed != 10)
+          break;
+
+      arrpush(s_GameData.sprites, sprite);
+
+      while (*p && *p != ';') p++;
+      if (*p == ';') p++;
+    }
+  }
+
+  for (size_t i = 0; i < sprites_count; ++i)
   {
-    Sprite sprite = {0};
+    int texWidth = 0, texHeight = 0;
+    Color* pixels = NULL;
 
-    int parsed = sscanf(
-        p,
-        "%lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf, %lf, %f",
-        &sprite.x, &sprite.y, &sprite.vx, &sprite.vy,
-        &sprite.dir_x, &sprite.dir_y,
-        &sprite.is_projectile, &sprite.is_ui,
-        &sprite.is_destroyed, &sprite.texture
-    );
+    const char* p = sprites[i];
 
-    if (parsed != 10)
-        break;
+    Image img = LoadImage(p);
+    texWidth = img.width;
+    texHeight = img.height;
 
-    arrpush(s_map.sprites, sprite);
+    if (texWidth > 0 && texHeight > 0) {
+        pixels = (Color*)malloc(texWidth * texHeight * sizeof(Color));
+        memcpy(pixels, img.data, texWidth * texHeight * sizeof(Color));
+    }
 
-    // skip to next entry
-    for (int commas = 0; *p && commas < 10; p++)
-        if (*p == ',') commas++;
+    UnloadImage(img);
+
+    if (pixels) {
+        size_t numPixels = texWidth * texHeight;
+        for (size_t p = 0; p < numPixels; p++)
+            arrpush(s_allTexturePixels, pixels[p]);
+        free(pixels);
+    }
+
+    Sprite m;
+    m.pixelOffset    = s_pixOffset;
+    m.texWidth       = texWidth;
+    m.texHeight      = texHeight;
+    arrpush(s_Sprites, m);
+
+    s_pixOffset += texWidth * texHeight;
+    s_totalTexturePixels += texWidth * texHeight;
   }
+
+
+
+  s_pixelsBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+        arrlen(s_allTexturePixels) * sizeof(Color), s_allTexturePixels, &s_err);
+
+  s_playerBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+        sizeof(Player), &s_Player, &s_err);
+
+  s_game_dataBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+        sizeof(GameData), &s_GameData, &s_err);
+
+  s_spritesBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+        sizeof(Sprite), &s_Sprites, &s_err);
+
+  clSetKernelArg(s_fragmentKernel, 5, sizeof(cl_mem), &s_playerBuffer);
+  clSetKernelArg(s_fragmentKernel, 6, sizeof(cl_mem), &s_game_dataBuffer);
+  clSetKernelArg(s_fragmentKernel, 7, sizeof(cl_mem), &s_pixelsBuffer);
+  clSetKernelArg(s_fragmentKernel, 8, sizeof(cl_mem), &s_spritesBuffer);
 }
 
 static int tile_size = 20;
@@ -216,7 +306,7 @@ void raycaster_draw_map_state()
     int x_offset = 0;
     for(size_t col=0;col<s_map_dim_size;++col)
     {
-      int val = s_map.map_data[row * s_map_dim_size + col];
+      int val = s_GameData.map_data[row * s_map_dim_size + col];
       const char* symbol;
       switch(val)
       {
@@ -225,6 +315,7 @@ void raycaster_draw_map_state()
         case 2: symbol = "O"; break;
         case 3: symbol = "X"; break;
         case 4: symbol = "@"; break;
+        default: symbol = "."; break;
       }
 
       DrawText(symbol, x_offset, y_offset, 6, RAYWHITE);
@@ -234,7 +325,7 @@ void raycaster_draw_map_state()
     y_offset += tile_size;
   }
 
-  /*int p_x_offset = (int)s_player.pos.x * tile_size;*/
-  /*int p_y_offset = (int)s_player.pos.y * tile_size;*/
-  /*DrawText("P", p_x_offset, p_y_offset, 6, RED);*/
+  int p_x_offset = (int)s_Player.pos.x * tile_size;
+  int p_y_offset = (int)s_Player.pos.y * tile_size;
+  DrawText("P", p_x_offset, p_y_offset, 6, RED);
 }

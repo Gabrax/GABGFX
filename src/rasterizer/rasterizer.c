@@ -291,7 +291,7 @@ void rasterizer_load_model(const char* filePath, const char* texturePath, f4x4 t
           memcpy(pixels, img.data, texWidth * texHeight * sizeof(Color));
       }
 
-      UnloadImage(img); // free Raylib image memory
+      UnloadImage(img);
   }
 
   for (size_t t = 0; t < numTriangles; t++)

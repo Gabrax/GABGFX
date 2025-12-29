@@ -11,6 +11,7 @@ typedef enum {
 } Movement;
 
 void raycaster_init(int width, int height);
+void raycaster_clear_background();
 void raycaster_draw();
 void raycaster_close();
 
@@ -20,5 +21,5 @@ void raycaster_init_camera(float fov, float near_plane, float far_plane);
 void raycaster_process_camera_keys(Movement direction);
 void raycaster_update_camera();
 
-void raycaster_load_map(const char* map_data, const char* sprites_data);
+void raycaster_load_map(const char* map_data, const char* sprites[],size_t sprites_count,const char* sprites_data[],size_t sprites_data_count);
 void raycaster_draw_map_state();
