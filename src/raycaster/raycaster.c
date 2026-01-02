@@ -24,6 +24,12 @@ typedef struct SpriteData {
   float texture;
 } SpriteData;
 
+typedef struct Sprite {
+    int offset;     // index into texture atlas
+    int width;
+    int height;
+} Sprite;
+
 typedef struct {
     float x, y;
     float dirX, dirY;
@@ -46,6 +52,9 @@ static cl_mem s_depthBuffer;
 static cl_mem s_playerBuffer;
 static cl_mem s_spritesBuffer;
 
+static cl_mem s_textureBuffer;
+static cl_mem s_spritesdataBuffer;
+
 static cl_mem s_mapBuffer;
 
 static size_t s_screenResolution[2];
@@ -54,16 +63,19 @@ static Texture2D s_outputTexture;
 
 static Player s_Player;
 
+static Sprite* s_Sprites = NULL;
+static Color* texture_atlas = NULL;
+
 unsigned char map[11][11] = {
     {1,1,1,1,1,1,1,1,1,1,1},
     {1,0,0,0,0,0,0,0,0,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,1,0,1},
+    {1,0,0,0,0,0,0,0,2,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
+    {1,0,0,0,0,0,0,0,3,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,0,0,1},
+    {1,0,0,0,0,0,4,0,0,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
     {1,1,1,1,1,1,1,1,1,1,1}
 };
@@ -135,6 +147,7 @@ void raycaster_draw()
   BeginDrawing();
   ClearBackground(BLACK);
   DrawTexture(s_outputTexture, 0, 0, WHITE);
+  raycaster_draw_map_state();
   EndDrawing();
 }
 
@@ -152,139 +165,88 @@ void raycaster_close()
   CloseWindow();
 }
 
-void raycaster_load_map(const char* map_data, const char* sprites[],size_t sprites_count,const char* sprites_data[],size_t sprites_data_count)
+void raycaster_load_map(const char* sprites[],size_t sprites_count,const char* sprites_data[],size_t sprites_data_count)
 {
-  /*memset(&s_GameData, 0, sizeof(s_GameData));*/
-  /**/
-  /*for (size_t i = 0; map_data[i]; ++i)*/
-  /*    if (isdigit((unsigned char)map_data[i]))*/
-  /*        arrpush(s_GameData.map_data, map_data[i] - '0');*/
-  /**/
-  /*s_GameData.map_data_size = arrlen(s_GameData.map_data);*/
-  /**/
-  /*int dim = (int)sqrt((double)s_GameData.map_data_size);*/
-  /*if (dim * dim != s_GameData.map_data_size)*/
-  /*{*/
-  /*    fprintf(stderr, "Map has to be square!\n");*/
-  /*    exit(EXIT_FAILURE);*/
-  /*}*/
-  /**/
-  /*s_map_dim_size = dim;*/
-  /**/
-  /*for (size_t i = 0; i < sprites_data_count; ++i)*/
-  /*{*/
-  /*  const char* p = sprites_data[i];*/
-  /**/
-  /*  while (*p)*/
-  /*  {*/
-  /*    SpriteData sprite = {0};*/
-  /**/
-  /*    int parsed = sscanf(*/
-  /*        p,*/
-  /*        " %lf , %lf , %lf , %lf , %lf , %lf , %lf , %lf , %lf , %f",*/
-  /*        &sprite.x, &sprite.y,*/
-  /*        &sprite.vx, &sprite.vy,*/
-  /*        &sprite.dir_x, &sprite.dir_y,*/
-  /*        &sprite.is_projectile,*/
-  /*        &sprite.is_ui,*/
-  /*        &sprite.is_destroyed,*/
-  /*        &sprite.texture*/
-  /*    );*/
-  /**/
-  /*    if (parsed != 10)*/
-  /*        break;*/
-  /**/
-  /*    arrpush(s_GameData.sprites, sprite);*/
-  /**/
-  /*    while (*p && *p != ';') p++;*/
-  /*    if (*p == ';') p++;*/
-  /*  }*/
-  /*}*/
-  /**/
-  /**/
-  /*for (size_t i = 0; i < sprites_count; ++i)*/
-  /*{*/
-  /*    const char* path = sprites[i];*/
-  /*    Image img = LoadImage(path);*/
-  /**/
-  /*    if (img.width > 0 && img.height > 0)*/
-  /*    {*/
-  /*        // kopiujemy piksele do wspólnego bufora*/
-  /*        size_t numPixels = img.width * img.height;*/
-  /*        for (size_t p = 0; p < numPixels; ++p)*/
-  /*            arrpush(s_allTexturePixels, ((Color*)img.data)[p]);*/
-  /**/
-  /*        // tworzymy Sprite*/
-  /*        Sprite s;*/
-  /*        Color* temp = (Color*)malloc(img.width * img.height * sizeof(Color));*/
-  /*        memcpy(temp, img.data, img.width * img.height * sizeof(Color));*/
-  /**/
-  /*        s.pixels = temp;*/
-  /*        s.texWidth = img.width;*/
-  /*        s.texHeight = img.height;*/
-  /*        arrpush(s_Sprites, s);*/
-  /**/
-  /*        s_pixOffset += numPixels;*/
-  /*        s_totalTexturePixels += numPixels;*/
-  /*    }*/
-  /**/
-  /*    UnloadImage(img);*/
-  /*}*/
-  /**/
-  /*s_pixelsBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,*/
-  /*      arrlen(s_allTexturePixels) * sizeof(Color), s_allTexturePixels, &s_err);*/
-  /**/
-  /*s_s_PlayerBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(s_Player), &s_s_Player, &s_err);*/
-  /**/
-  /*s_game_dataBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,*/
-  /*      sizeof(GameData), &s_GameData, &s_err);*/
-  /**/
-  /*s_spritesBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,*/
-  /*      sizeof(Sprite) * arrlen(s_Sprites), &s_Sprites, &s_err);*/
-  /**/
-  /*clSetKernelArg(s_fragmentKernel, 3, sizeof(cl_mem), &s_s_PlayerBuffer);*/
-  /*clSetKernelArg(s_fragmentKernel, 4, sizeof(cl_mem), &s_pixelsBuffer);*/
-  /*clSetKernelArg(s_fragmentKernel, 5, sizeof(cl_mem), &s_spritesBuffer);*/
-  /*clSetKernelArg(s_fragmentKernel, 6, sizeof(cl_mem), &s_game_dataBuffer);*/
-  /*int floor = 6, ceil = 1;*/
-  /*clSetKernelArg(s_fragmentKernel, 7, sizeof(int), &floor);*/
-  /*clSetKernelArg(s_fragmentKernel, 8, sizeof(int), &ceil);*/
+  for (size_t i = 0; i < sprites_count; ++i)
+  {
+      Image img = LoadImage(sprites[i]);
+      ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+      ImageFlipVertical(&img);
+
+      int pixel_count = img.width * img.height;
+      size_t offset = arrlen(texture_atlas);
+
+      arraddn(texture_atlas, pixel_count);
+      memcpy(texture_atlas + offset,
+             img.data,
+             pixel_count * sizeof(Color));
+
+      Sprite s = {
+          .offset = offset,
+          .width  = img.width,
+          .height = img.height
+      };
+
+      arrput(s_Sprites, s);
+      UnloadImage(img);
+  }
+
+  // OpenCL buffers
+  size_t atlas_size = arrlen(texture_atlas);
+
+  s_textureBuffer = clCreateBuffer(
+      s_context,
+      CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+      atlas_size * sizeof(Color),
+      texture_atlas,
+      NULL);
+
+  s_spritesdataBuffer = clCreateBuffer(
+      s_context,
+      CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+      arrlen(s_Sprites) * sizeof(Sprite),
+      s_Sprites,
+      NULL);
+
+  // kernel args
+  clSetKernelArg(s_fragmentKernel, 6, sizeof(cl_mem), &s_textureBuffer);
+  clSetKernelArg(s_fragmentKernel, 7, sizeof(cl_mem), &s_spritesdataBuffer);
 }
 
 static int tile_size = 20;
 
 void raycaster_draw_map_state()
 {
-  /*int y_offset = 0;*/
-  /**/
-  /*for(size_t row=0;row<s_map_dim_size;++row)*/
-  /*{*/
-  /*  int x_offset = 0;*/
-  /*  for(size_t col=0;col<s_map_dim_size;++col)*/
-  /*  {*/
-  /*    int val = s_GameData.map_data[row * s_map_dim_size + col];*/
-  // --- Update s_Player in GPU ---
-  /*    const char* symbol;*/
-  /*    switch(val)*/
-  /*    {*/
-  /*      case 0: symbol = " "; break;*/
-  /*      case 1: symbol = "#"; break;*/
-  /*      case 2: symbol = "O"; break;*/
-  /*      case 3: symbol = "X"; break;*/
-  /*      case 4: symbol = "@"; break;*/
-  /*      default: symbol = "."; break;*/
-  /*    }*/
-  /**/
-  /*    DrawText(symbol, x_offset, y_offset, 6, RAYWHITE);*/
-  /**/
-  /*    x_offset += tile_size;*/
-  /*  }*/
-  /*  y_offset += tile_size;*/
-  /*}*/
-  /**/
-  /*int p_x_offset = (int)s_s_Player.pos.x * tile_size;*/
-  /*int p_y_offset = (int)s_s_Player.pos.y * tile_size;*/
-  /*DrawText("P", p_x_offset, p_y_offset, 6, RED);*/
+  int y_offset = 0;
+
+  for(size_t row=0;row<11;++row)
+  {
+    int x_offset = 0;
+    for(size_t col=0;col<11;++col)
+    {
+      int val = map[row][col];
+
+      const char* symbol;
+      switch(val)
+      {
+        case 0: symbol = " "; break;
+        case 1: symbol = "#"; break;
+        case 2: symbol = "O"; break;
+        case 3: symbol = "X"; break;
+        case 4: symbol = "@"; break;
+        default: symbol = "."; break;
+      }
+
+      DrawText(symbol, x_offset, y_offset, 6, RAYWHITE);
+
+      x_offset += tile_size;
+    }
+    y_offset += tile_size;
+  }
+
+  int p_x_offset = (int)s_Player.x * tile_size;
+  int p_y_offset = (int)s_Player.y * tile_size;
+  DrawText("P", p_x_offset, p_y_offset, 6, RED);
 }
 
 void raycaster_update_player()
