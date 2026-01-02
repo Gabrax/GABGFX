@@ -14,6 +14,9 @@ typedef struct f4 { float x,y,z,w; } f4;
 void f2Print(f2* v);
 void f3Print(f3* v);
 
+f2 f2Norm(f2 v);
+float f2Len(f2 v);
+
 f3 f3Add(f3 v1, f3 v2);
 f3 f3Sub(f3 v1, f3 v2);
 f3 f3Mul(f3 v1, f3 v2);
@@ -72,20 +75,24 @@ float LCM(float a, float b)
 void isPrime(int val)
 {
   int count = 0;
-  for(int i=1;i<=val;++i)
-  {
+  for(int i=1;i<=val;++i) 
     if((val % i) == 0) count++;
-  }
 
-  if(count == 2)
-  {
-    printf("%d ", val);
-  }
+  if(count == 2) printf("%d ", val);
 }
 
 void f2Print(f2* v)
 {
   printf("[ %f %f ]\n", v->x,v->y);
+}
+float f2Len(f2 v)
+{
+  return sqrtf(v.x * v.x + v.y * v.y);
+}
+f2 f2Norm(f2 v)
+{
+  float len = f2Len(v);
+  return (f2){ v.x / len, v.y / len};
 }
 void f3Print(f3* v)
 {

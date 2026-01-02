@@ -22,122 +22,61 @@ typedef struct SpriteData {
   float texture;
 } SpriteData;
 
-typedef struct GameData {
-  size_t map_data_size;
-  uint8* map_data;
-  SpriteData* sprites;
-} GameData;
-
-typedef struct Sprite {
-  int pixelOffset;
-  int texWidth;
-  int texHeight;
-} Sprite;
-
-typedef struct Player {
-  float2 pos;
-  float2 dir;
-  float2 projection;
-  float movespeed;
-  bool is_shooting;
-  size_t sprite_index;
-  size_t frame_counter;
-} Player;
-
-__kernel void clear_buffers(
-    __global Pixel* pixels,
-    __global float* depth,
-    int width, int height,
-    Pixel color)
-{
-    int x = get_global_id(0);
-    int y = get_global_id(1);
-    if (x >= width || y >= height) return;
-    int idx = y * width + x;
-    pixels[idx] = color;
-    depth[idx] = FLT_MAX;
-}
+typedef struct { float x, y; float dirX, dirY; float planeX, planeY; } Player;
+typedef struct { uchar r,g,b,a; } Color;
 
 __kernel void fragment_kernel(
-    __global Pixel* pixels,
-    int width,
-    int height,
-    __global float* depthBuffer,
-    __global Player* player,
-    __global GameData* game_data,
-    __global Pixel* textures,
-    __global Sprite* sprites)
+   __global Color* framebuffer,
+   int screen_width,
+   int screen_height,
+   __global Player* player,
+   __global uchar* map_data,
+   int map_size)
 {
-  int x = get_global_id(0);
-  int y = get_global_id(1);
-  if (x >= width || y >= height) return;
+   int x = get_global_id(0);
+   if(x>=screen_width) return;
 
-  int idx = (height - y - 1) * (width + x);
-  float2 P = (float2)(x + 0.5f, y + 0.5f); // pixel center
+   Player p = player[0];
 
-  for (int y=0;y<(height/2)+1;++y)
-  {
-    for (int x=0;x<width;++x)
-    {
+   float cameraX = 2.0f*x/screen_width -1.0f;
 
-    }
-  }
+   float rayDirX = p.dirX + p.planeX*cameraX;
+   float rayDirY = p.dirY + p.planeY*cameraX;
 
-  float depth = 0;
-  float3 finalColor = 1;
+   int mapX = (int)p.x;
+   int mapY = (int)p.y;
 
-  pixels[idx] = (Pixel){
-      (uchar)(finalColor.x * 255),
-      (uchar)(finalColor.y * 255),
-      (uchar)(finalColor.z * 255),
-      255
-  };
+   float deltaDistX = (rayDirX==0) ? 1e30f : fabs(1.0f/rayDirX);
+   float deltaDistY = (rayDirY==0) ? 1e30f : fabs(1.0f/rayDirY);
 
-  depthBuffer[idx] = depth;
+   int stepX = (rayDirX<0) ? -1 : 1;
+   int stepY = (rayDirY<0) ? -1 : 1;
+
+   float sideDistX = (rayDirX<0) ? (p.x-mapX) * deltaDistX : (mapX+1.0f-p.x) * deltaDistX;
+   float sideDistY = (rayDirY<0) ? (p.y-mapY) * deltaDistY : (mapY+1.0f-p.y) * deltaDistY;
+
+   int hit=0, side=0;
+   while(!hit)
+   {
+       if(sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side=0; } else { sideDistY += deltaDistY; mapY += stepY; side=1; }
+       if(mapX<0 || mapY < 0 || mapX >= map_size || mapY >= map_size) break;
+       if(map_data[mapY * map_size + mapX] > 0) hit = 1;
+   }
+
+   float perpWallDist = (side==0) ? (sideDistX - deltaDistX) : (sideDistY - deltaDistY);
+
+   perpWallDist = fmax(perpWallDist,0.0001f);
+   int lineHeight = (int)(screen_height / perpWallDist);
+   int drawStart = max(-lineHeight/2 + screen_height/2, 0);
+   int drawEnd = min(lineHeight/2 + screen_height/2, screen_height-1);
+   uchar r = (side==0) ? 255 : 180;
+   uchar g = 0; uchar b = 0;
+
+   for(int y=0;y<screen_height;y++)
+   {
+       int idx = y * screen_width + x;
+       if(y < drawStart) framebuffer[idx] = (Color){70,70,120,255};
+       else if(y > drawEnd) framebuffer[idx] = (Color){40,40,40,255};
+       else framebuffer[idx] = (Color){r,g,b,255};
+   }
 }
-
-    /*fn render_floor_ceiling(&mut self) {*/
-    /*    let mut floor_texture = self.textures[6].borrow_mut();  // Borrow the image immutably*/
-    /*    let mut ceiling_texture = self.textures[1].borrow_mut();  // Borrow the image immutably*/
-    /**/
-    /*    let player = self.player.borrow();*/
-    /**/
-    /*    let ray_dir_x0 = player.dir.x - player.projection.x;*/
-    /*    let ray_dir_y0 = player.dir.y - player.projection.y;*/
-    /*    let ray_dir_x1 = player.dir.x + player.projection.x;*/
-    /*    let ray_dir_y1 = player.dir.y + player.projection.y;*/
-    /**/
-    /*    let pos_z = 0.5 * self.buffer_height as f32;*/
-    /**/
-    /*    for y in (self.buffer_height / 2 + 1)..self.buffer_height {*/
-    /*        let p = y as f32 - self.buffer_height as f32 / 2.0;*/
-    /*        let row_distance = pos_z / p;*/
-    /**/
-    /*        let floor_step_x = row_distance * (ray_dir_x1 - ray_dir_x0) / self.buffer_width as f32;*/
-    /*        let floor_step_y = row_distance * (ray_dir_y1 - ray_dir_y0) / self.buffer_width as f32;*/
-    /**/
-    /*        let mut floor_x = player.pos.x + row_distance * ray_dir_x0;*/
-    /*        let mut floor_y = player.pos.y + row_distance * ray_dir_y0;*/
-    /**/
-    /*        for x in 0..self.buffer_width {*/
-    /*            let cell_x = floor_x as i32;*/
-    /*            let cell_y = floor_y as i32;*/
-    /**/
-    /*            let tex_x = ((floor_x - cell_x as f32) * floor_texture.width as f32) as i32 & (floor_texture.width - 1);*/
-    /*            let tex_y = ((floor_y - cell_y as f32) * floor_texture.height as f32) as i32 & (floor_texture.height - 1);*/
-    /**/
-    /*            floor_x += floor_step_x;*/
-    /*            floor_y += floor_step_y;*/
-    /**/
-    /*            let floor_color = floor_texture.get_color(tex_x, tex_y);*/
-    /*            // Store the floor pixel color in pixelbuffer*/
-    /*            self.pixelbuffer[(y * self.buffer_width + x) as usize] = Self::color_to_u32(floor_color);*/
-    /**/
-    /*            let ceiling_color = ceiling_texture.get_color(tex_x, tex_y);*/
-    /*            // Store the ceiling pixel color in pixelbuffer (mirrored y-coordinate)*/
-    /*            self.pixelbuffer[((self.buffer_height - y - 1) * self.buffer_width + x) as usize] = Self::color_to_u32(ceiling_color);*/
-    /*        }*/
-    /*    }*/
-    /*}*/
-
-

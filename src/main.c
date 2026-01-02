@@ -50,21 +50,16 @@ const char* sprites_data[] = {
   "3.5, 2.5, 0, 0, 0, 0,0, 0, 0, 11"
 };
 
-int main()
+int main(void)
 {
-  raycaster_init(800, 600);
+  raycaster_init(800,600);
 
-  raycaster_load_map(map,sprites,sizeof sprites / sizeof sprites [0],sprites_data,sizeof sprites_data / sizeof sprites_data[0]);
-
-  while(!WindowShouldClose())
+  while (!WindowShouldClose())
   {
-    raycaster_clear_background();
-
-    raycaster_draw_map_state();
+    raycaster_update_player();
 
     raycaster_draw();
   }
 
-  return 0;
+  raycaster_close();
 }
-
