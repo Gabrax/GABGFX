@@ -14,7 +14,7 @@
 /*1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, \*/
 /*1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,";*/
 
-const char* sprites[] = {
+const char* textures[] = {
   "res/greystone.png",
   "res/wood.png",
   "res/mossy.png",
@@ -23,6 +23,9 @@ const char* sprites[] = {
   "res/colorstone.png",
   "res/bluestone.png",
   "res/eagle.png",
+};
+
+const char* sprites[] = {
   "res/barrel.png",
   "res/pillar.png",
   "res/greenlight.png",
@@ -42,19 +45,21 @@ const char* sprites[] = {
   "res/shotgun8.png",
 };
 
-const char* sprites_data[] = {
-  "6.0, 8.5, 0, 0, 0, 0,0, 0, 0, 10",
-  "3.5, 6.5, 0, 0, 0, 0,0, 0, 0, 10",
-  "5.5, 5.5, 0, 0, 0, 0,0, 0, 0, 9",
-  "7.5, 1.5, 0, 0, 0, 0,0, 0, 0, 8",
-  "3.5, 2.5, 0, 0, 0, 0,0, 0, 0, 11"
+SpriteData sprites_data[] = {
+  {6.0, 8.5, 0, 0, 0, 0,0, 0, 0, 10},
+  {3.5, 6.5, 0, 0, 0, 0,0, 0, 0, 10},
+  {5.5, 5.5, 0, 0, 0, 0,0, 0, 0, 9},
+  {7.5, 1.5, 0, 0, 0, 0,0, 0, 0, 8},
+  {3.5, 2.5, 0, 0, 0, 0,0, 0, 0, 11}
 };
+
+#define ARR_SIZE(x) (sizeof x / sizeof x[0])
 
 int main(void)
 {
   raycaster_init(800,600);
 
-  raycaster_load_map(sprites, sizeof sprites / sizeof sprites[0], sprites_data, sizeof sprites_data / sizeof sprites_data[0]);
+  raycaster_load_assets(textures, ARR_SIZE(textures), sprites, ARR_SIZE(sprites), sprites_data, ARR_SIZE(sprites_data));
 
   while (!WindowShouldClose())
   {
