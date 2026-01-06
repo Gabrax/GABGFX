@@ -9,18 +9,20 @@ typedef struct Mat4 {
     float w0, w1, w2, w3;
 } Mat4;
 
+
 typedef struct SpriteData {
-  double x;
-  double y;
-  double vx; // Velocity in X direction
-  double vy; // Velocity in Y direction
-  double dir_x; // Velocity in X direction
-  double dir_y; // Velocity in Y direction
-  double is_projectile;
-  double is_ui;
-  double is_destroyed;
-  float texture;
+    float x;
+    float y;
+    float vx;
+    float vy;
+    float dir_x;
+    float dir_y;
+    int is_projectile;
+    int is_ui;
+    int is_destroyed;
+    int texture;
 } SpriteData;
+
 
 typedef struct { float x, y; float dirX, dirY; float planeX, planeY; } Player;
 typedef struct { uchar r,g,b,a; } Color;
@@ -38,36 +40,16 @@ inline Color sample_sprite(
     return atlas[s.offset + y * s.width + x];
 }
 
-
-//sort the sprites based on distance
-/*inline void sortSprites(int* order, double* dist, int amount)*/
-/*{*/
-/*  std::vector<std::pair<double, int>> sprites(amount);*/
-/*  for(int i = 0; i < amount; i++) {*/
-/*    sprites[i].first = dist[i];*/
-/*    sprites[i].second = order[i];*/
-/*  }*/
-/*  std::sort(sprites.begin(), sprites.end());*/
-/*  // restore in reverse order to go from farthest to nearest*/
-/*  for(int i = 0; i < amount; i++) {*/
-/*    dist[i] = sprites[amount - i - 1].first;*/
-/*    order[i] = sprites[amount - i - 1].second;*/
-/*}*/
-
-__kernel void fragment_kernel(
-   __global Color* framebuffer,
-   int screen_width,
-   int screen_height,
-   __global Player* player,
-   __global uchar* map_data,
-   int map_size,
-   __global Color* texture_atlas,
-   __global Sprite* sprites,
-   __global float* depthbuffer,
-   __global int* spriteOrder,
-   __global float* spriteDistance,
-   int numSprites,
-   __global SpriteData* spritesData)
+__kernel void surface_kernel(
+    __global Color* framebuffer,
+    __global float* depthbuffer,
+    int screen_width,
+    int screen_height,
+    __global Player* player,
+    __global uchar* map_data,
+    int map_size,
+    __global Color* texture_atlas,
+    __global Sprite* sprites)
 {
     int x = get_global_id(0);
     if(x >= screen_width) return;
@@ -188,64 +170,79 @@ __kernel void fragment_kernel(
                                                      (output.g >> 1) & 8355711,
                                                      (output.b >> 1) & 8355711,
                                                       255} : output;
-            // Sprites
+
             depthbuffer[x] = perpWallDist;
+        }
+    }
+}
 
-            for(int i = 0; i < numSprites; ++i)
-            {
-              spriteOrder[i] = i;
-              spriteDistance[i] = ((p.x - spritesData[i].x) * (p.x - spritesData[i].x) + (p.x - spritesData[i].y) * (p.x - spritesData[i].y)); //sqrt not taken, unneeded
-            }
-            /*sortSprites(spriteOrder, spriteDistance, numSprites);*/
+__kernel void sprites_kernel(
+    __global Color* framebuffer,
+    __global float* depthbuffer,
+    int screen_width,
+    int screen_height,
+    __global Player* player,
+    __global SpriteData* spritesData,  // tylko aktywne sprite'y
+    __global int* spriteOrder,         // posortowane wg odległości
+    int numSprites,                     // liczba aktywnych sprite'ów
+    __global Color* texture_atlas,
+    __global Sprite* sprites)           // atlas / metadata sprite'ów
+{
+    int stripe = get_global_id(0);
+    if (stripe >= screen_width) return;
 
-            for(int i = 0; i < numSprites; ++i)
-            {
-              float spriteX = spritesData[spriteOrder[i]].x - p.x;
-              float spriteY = spritesData[spriteOrder[i]].y - p.y;
+    Player p = player[0];
 
-              float invDet = 1.0 / (p.planeX * p.dirY - p.dirX * p.planeY);
-              
-              float transformX = invDet * (p.dirY * spriteX - p.dirX * spriteY);
-              float transformY = invDet * (-p.planeY * spriteX + p.planeX * spriteY);
+    for (int i = 0; i < numSprites; i++)
+    {
+        int s = spriteOrder[i]; // indeks w spritesData
 
-              int spriteScreenX = (int)((screen_width / 2.0) * (1 + transformX / transformY));
+        if (s < 0 || s >= numSprites) continue;
 
-              int spriteHeight = abs((int)((screen_height / (transformY))));
-              int drawStartY = -spriteHeight / 2 + screen_height / 2;
-              if(drawStartY < 0) drawStartY = 0;
-              int drawEndY = spriteHeight / 2 + screen_height / 2;
-              if(drawEndY >= screen_height) drawEndY = screen_height - 1;
+        SpriteData sd = spritesData[s];
 
-              int spriteWidth = abs((int)(screen_height / (transformY)));
-              int drawStartX = -spriteWidth / 2 + spriteScreenX;
-              if(drawStartX < 0) drawStartX = 0;
-              int drawEndX = spriteWidth / 2 + spriteScreenX;
-              if(drawEndX >= screen_width) drawEndX = screen_width - 1;
+        if (sd.is_destroyed || sd.is_ui) continue;
 
-              Sprite sprite = sprites[10];
+        float spriteX = sd.x - p.x;
+        float spriteY = sd.y - p.y;
 
-              for(int stripe = drawStartX; stripe < drawEndX; stripe++)
-              {
-                int texX = (int)(256 * (stripe - (-spriteWidth / 2 + spriteScreenX)) * sprite.width / spriteWidth) / 256;
-                
-                if(transformY > 0 && stripe > 0 && stripe < screen_width && transformY < depthbuffer[stripe])
-                {
-                  for(int y = drawStartY; y < drawEndY; y++) 
-                  {
-                    int d = (y) * 256 - screen_height * 128 + spriteHeight * 128;
-                    int texY = ((d * sprite.height) / spriteHeight) / 256;
+        float invDet = 1.0f / (p.planeX * p.dirY - p.dirX * p.planeY);
+        float transformX = invDet * (p.dirY * spriteX - p.dirX * spriteY);
+        float transformY = invDet * (-p.planeY * spriteX + p.planeX * spriteY);
 
-                    Color output = sample_sprite(texture_atlas, sprites, 10, texX, texY); 
+        if (transformY <= 0 || transformY >= depthbuffer[stripe])
+            continue;
 
-                    /*framebuffer[idx] = (side == 1) ? (Color){(output.r >> 1) & 8355711,*/
-                    /*                                   (output.g >> 1) & 8355711,*/
-                    /*                                   (output.b >> 1) & 8355711,*/
-                    /*                                    255} : output;*/
+        int spriteScreenX = (int)((screen_width / 2.0f) * (1 + transformX / transformY));
+        int spriteHeight   = abs((int)(screen_height / transformY));
+        int drawStartY     = max(-spriteHeight / 2 + screen_height / 2, 0);
+        int drawEndY       = min(spriteHeight / 2 + screen_height / 2, screen_height - 1);
 
-                  }
-                }
-              }
-            }
+        int spriteWidth = spriteHeight;
+        int drawStartX  = -spriteWidth / 2 + spriteScreenX;
+        int drawEndX    = spriteWidth / 2 + spriteScreenX;
+
+        if (stripe < drawStartX || stripe > drawEndX) continue;
+
+        int texId = sd.texture; // ID w atlasie
+        if (texId < 0) continue;
+
+        Sprite spr = sprites[texId];
+
+        int texX = (int)(
+            256 * (stripe - (-spriteWidth / 2 + spriteScreenX))
+            * spr.width / spriteWidth) / 256;
+
+        for (int y = drawStartY; y < drawEndY; y++)
+        {
+            int d = y * 256 - screen_height * 128 + spriteHeight * 128;
+            int texY = ((d * spr.height) / spriteHeight) / 256;
+            texY = spr.height - texY - 1;
+
+            Color c = sample_sprite(texture_atlas, sprites, texId, texX, texY);
+
+            if (c.a > 0)
+                framebuffer[y * screen_width + stripe] = c;
         }
     }
 }

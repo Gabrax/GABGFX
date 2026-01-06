@@ -33,7 +33,8 @@ static cl_context s_context;
 static cl_command_queue s_queue;
 static cl_int s_err;
 
-static cl_kernel s_fragmentKernel;
+static cl_kernel s_surfaceKernel;
+static cl_kernel s_spritesKernel;
 
 static cl_mem s_frameBuffer;
 static cl_mem s_depthBuffer;
@@ -82,6 +83,38 @@ static inline const char* raycaster_load_kernel(const char* filename)
   return src;
 }
 
+typedef struct {
+    float dist;
+    int index;
+} SpriteSort;
+
+int sprite_cmp(const void* a, const void* b)
+{
+    float d = ((SpriteSort*)b)->dist - ((SpriteSort*)a)->dist;
+    return (d > 0) - (d < 0); // malejąco
+}
+
+static inline void prepareSprites(
+    Player* p,
+    SpriteData* sprites,
+    int num,
+    int* spriteOrder)
+{
+    SpriteSort tmp[120]; // max sprite count
+
+    for (int i = 0; i < num; i++) {
+        float dx = p->x - sprites[i].x;
+        float dy = p->y - sprites[i].y;
+        tmp[i].dist = dx*dx + dy*dy;
+        tmp[i].index = i;
+    }
+
+    qsort(tmp, num, sizeof(SpriteSort), sprite_cmp);
+
+    for (int i = 0; i < num; i++)
+        spriteOrder[i] = tmp[i].index;
+}
+
 void raycaster_init(int width, int height)
 {
   s_screenResolution[0] = width; s_screenResolution[1] = height;
@@ -106,28 +139,46 @@ void raycaster_init(int width, int height)
   s_program = clCreateProgramWithSource(s_context, 1, &kernel_source, NULL, NULL);  
   clBuildProgram(s_program, 1, &s_device, NULL, NULL, NULL);
 
-  s_fragmentKernel = clCreateKernel(s_program, "fragment_kernel", NULL);
+  s_surfaceKernel = clCreateKernel(s_program, "surface_kernel", NULL);
+  s_spritesKernel = clCreateKernel(s_program, "sprites_kernel", NULL);
 
   s_frameBuffer = clCreateBuffer(s_context, CL_MEM_READ_WRITE, sizeof(Color)*width*height, NULL, NULL);
   s_playerBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(Player), &s_Player, NULL);
   s_mapBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(map), &map, NULL);
   s_depthBuffer = clCreateBuffer(s_context,CL_MEM_READ_WRITE, sizeof(float)*width,NULL,NULL);
 
-  clSetKernelArg(s_fragmentKernel, 0, sizeof(cl_mem), &s_frameBuffer);
-  clSetKernelArg(s_fragmentKernel, 1, sizeof(int), &width);
-  clSetKernelArg(s_fragmentKernel, 2, sizeof(int), &height);
-  clSetKernelArg(s_fragmentKernel, 3, sizeof(cl_mem), &s_playerBuffer);
-  clSetKernelArg(s_fragmentKernel, 4, sizeof(cl_mem), &s_mapBuffer);
+  clSetKernelArg(s_surfaceKernel, 0, sizeof(cl_mem), &s_frameBuffer);
+  clSetKernelArg(s_surfaceKernel, 1, sizeof(cl_mem), &s_depthBuffer);
+  clSetKernelArg(s_surfaceKernel, 2, sizeof(int), &width);
+  clSetKernelArg(s_surfaceKernel, 3, sizeof(int), &height);
+  clSetKernelArg(s_surfaceKernel, 4, sizeof(cl_mem), &s_playerBuffer);
+  clSetKernelArg(s_surfaceKernel, 5, sizeof(cl_mem), &s_mapBuffer);
   int map_size = 11;
-  clSetKernelArg(s_fragmentKernel, 5, sizeof(int), &map_size);
-  clSetKernelArg(s_fragmentKernel, 8, sizeof(cl_mem), &s_depthBuffer);
+  clSetKernelArg(s_surfaceKernel, 6, sizeof(int), &map_size);
+
+  clSetKernelArg(s_spritesKernel, 0, sizeof(cl_mem), &s_frameBuffer);
+  clSetKernelArg(s_spritesKernel, 1, sizeof(cl_mem), &s_depthBuffer);
+  clSetKernelArg(s_spritesKernel, 2, sizeof(int), &width);
+  clSetKernelArg(s_spritesKernel, 3, sizeof(int), &height);
+  clSetKernelArg(s_spritesKernel, 4, sizeof(cl_mem), &s_playerBuffer);
 
   s_pixelBuffer = (Color*)malloc(sizeof(Color)*s_screenResolution[0]*s_screenResolution[1]);
 }
 
+static size_t s_numSprites;
+static int s_spriteOrder[120];
+static SpriteData s_spritesData[120]; 
+
 void raycaster_draw()
 {
-  clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 1, NULL, &s_screenResolution[0], NULL, 0, NULL, NULL);
+  prepareSprites(&s_Player, s_spritesData, s_numSprites, s_spriteOrder);
+
+  clEnqueueWriteBuffer(s_queue,s_spriteOrderBuffer,CL_TRUE,0,s_numSprites * sizeof(int),s_spriteOrder,0, NULL, NULL);
+
+  clEnqueueNDRangeKernel(s_queue, s_surfaceKernel, 1, NULL, &s_screenResolution[0], NULL, 0, NULL, NULL);
+
+  clEnqueueNDRangeKernel(s_queue, s_spritesKernel, 1, NULL, &s_screenResolution[0], NULL, 0, NULL, NULL);
+
   clFinish(s_queue);
 
   clEnqueueReadBuffer(s_queue, s_frameBuffer, CL_TRUE, 0, sizeof(Color)*s_screenResolution[0]*s_screenResolution[1], s_pixelBuffer, 0, NULL, NULL);
@@ -150,7 +201,7 @@ void raycaster_close()
   clReleaseMemObject(s_textureBuffer);
   clReleaseMemObject(s_spritesDataBuffer);
 
-  clReleaseKernel(s_fragmentKernel);
+  clReleaseKernel(s_surfaceKernel);
   clReleaseProgram(s_program);
   clReleaseCommandQueue(s_queue);
   clReleaseContext(s_context);
@@ -159,7 +210,9 @@ void raycaster_close()
   CloseWindow();
 }
 
-void raycaster_load_assets(const char* textures[],size_t textures_count,const char* sprites[],size_t sprites_count,SpriteData sprites_data[],size_t sprites_data_count)
+void raycaster_load_assets(const char* textures[],size_t textures_count,
+                           const char* sprites[],size_t sprites_count,
+                           SpriteData sprites_data[],size_t sprites_data_count)
 {
   for (size_t i = 0; i < textures_count; ++i)
   {
@@ -231,23 +284,23 @@ void raycaster_load_assets(const char* textures[],size_t textures_count,const ch
       NULL);
   s_spriteOrderBuffer = clCreateBuffer(
       s_context,
-      CL_MEM_READ_WRITE,
-      sprites_count * sizeof(int),
-      NULL,
-      NULL);
-  s_spriteDistanceBuffer = clCreateBuffer(
-      s_context,
-      CL_MEM_READ_WRITE,
-      sprites_count * sizeof(float),
+      CL_MEM_READ_ONLY,
+      120 * sizeof(int),
       NULL,
       NULL);
 
-  clSetKernelArg(s_fragmentKernel, 6, sizeof(cl_mem), &s_textureBuffer);
-  clSetKernelArg(s_fragmentKernel, 7, sizeof(cl_mem), &s_spritesBuffer);
-  clSetKernelArg(s_fragmentKernel, 9, sizeof(cl_mem), &s_spriteOrderBuffer);
-  clSetKernelArg(s_fragmentKernel, 10, sizeof(cl_mem), &s_spriteDistanceBuffer);
-  clSetKernelArg(s_fragmentKernel, 11, sizeof(int), &sprites_count);
-  clSetKernelArg(s_fragmentKernel, 12, sizeof(cl_mem), &s_spritesDataBuffer);
+  s_numSprites = sprites_count;
+
+  memcpy(s_spritesData, sprites_data, sprites_count * sizeof(SpriteData));
+
+  clSetKernelArg(s_surfaceKernel, 7, sizeof(cl_mem), &s_textureBuffer);
+  clSetKernelArg(s_surfaceKernel, 8, sizeof(cl_mem), &s_spritesBuffer);
+
+  clSetKernelArg(s_spritesKernel, 5, sizeof(cl_mem), &s_spritesDataBuffer);
+  clSetKernelArg(s_spritesKernel, 6, sizeof(cl_mem), &s_spriteOrderBuffer);
+  clSetKernelArg(s_spritesKernel, 7, sizeof(int), &sprites_count);
+  clSetKernelArg(s_spritesKernel, 8, sizeof(cl_mem), &s_textureBuffer);
+  clSetKernelArg(s_spritesKernel, 9, sizeof(cl_mem), &s_spritesBuffer);
 }
 
 static int tile_size = 20;

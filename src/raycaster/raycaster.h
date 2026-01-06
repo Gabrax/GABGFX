@@ -11,16 +11,16 @@ typedef enum {
 } Movement;
 
 typedef struct SpriteData {
-  double x;
-  double y;
-  double vx;
-  double vy;
-  double dir_x;
-  double dir_y;
-  double is_projectile;
-  double is_ui;
-  double is_destroyed;
-  float texture;
+    float x;
+    float y;
+    float vx;
+    float vy;
+    float dir_x;
+    float dir_y;
+    int is_projectile;
+    int is_ui;
+    int is_destroyed;
+    int texture;
 } SpriteData;
 
 void raycaster_init(int width, int height);
