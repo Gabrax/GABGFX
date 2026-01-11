@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../gab_math.h"
-#include <raylib.h>
+#include "raylib.h"
 
 typedef struct {
     f3 vertex[3]; 
@@ -31,6 +31,3 @@ void rasterizer_free_all_models();
 void rasterizer_init_camera(float fov, float near_plane, float far_plane);
 void rasterizer_move_camera(Movement direction);
 void rasterizer_update_camera();
-
-
-

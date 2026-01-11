@@ -11,7 +11,6 @@
 #include "CL/cl.h"
 #include "CL/cl_platform.h"
 
-
 typedef struct Sprite {
     int offset;
     int width;
@@ -55,16 +54,24 @@ static Player s_Player;
 static Sprite* s_Sprites = NULL;
 static Color* texture_atlas = NULL;
 
+static int ui_first_frame = 17;
+static int ui_last_frame  = 23;
+static int ui_current_frame = 17;
+
+static int ui_anim_playing = 0;
+static float ui_anim_timer = 0.0f;
+static float ui_anim_fps   = 6.0f;
+
 unsigned char map[11][11] = {
     {1,1,1,1,1,1,1,1,1,1,1},
     {1,0,0,0,0,0,0,0,0,0,1},
+    {1,0,5,5,0,0,0,4,4,0,1},
+    {1,0,5,0,0,0,0,0,4,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,2,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,0,0,3,0,1},
-    {1,0,0,0,0,0,0,0,0,0,1},
-    {1,0,0,0,0,0,4,0,0,0,1},
+    {1,0,2,0,0,0,0,0,3,0,1},
+    {1,0,2,2,0,0,0,3,3,0,1},
     {1,0,0,0,0,0,0,0,0,0,1},
     {1,1,1,1,1,1,1,1,1,1,1}
 };
@@ -100,7 +107,7 @@ static inline void prepareSprites(
     int num,
     int* spriteOrder)
 {
-    SpriteSort tmp[120]; // max sprite count
+    SpriteSort tmp[120];
 
     for (int i = 0; i < num; i++) {
         float dx = p->x - sprites[i].x;
@@ -121,6 +128,7 @@ void raycaster_init(int width, int height)
 
   InitWindow(width, height, "Raycaster");
   SetTargetFPS(60);
+  DisableCursor();
 
   s_Player = (Player){5.5f,5.5f,-1.0f,0.0f,0.0f,0.66f,0.05f,0.03f};
 
@@ -161,6 +169,7 @@ void raycaster_init(int width, int height)
   clSetKernelArg(s_spritesKernel, 2, sizeof(int), &width);
   clSetKernelArg(s_spritesKernel, 3, sizeof(int), &height);
   clSetKernelArg(s_spritesKernel, 4, sizeof(cl_mem), &s_playerBuffer);
+  clSetKernelArg(s_spritesKernel, 10, sizeof(int), &ui_first_frame);
 
   s_pixelBuffer = (Color*)malloc(sizeof(Color)*s_screenResolution[0]*s_screenResolution[1]);
 }
@@ -188,7 +197,7 @@ void raycaster_draw()
   BeginDrawing();
   ClearBackground(BLACK);
   DrawTexture(s_outputTexture, 0, 0, WHITE);
-  raycaster_draw_map_state();
+  /*raycaster_draw_map_state();*/
   EndDrawing();
 }
 
@@ -361,9 +370,8 @@ void raycaster_update_player()
       float ny = s_Player.y - s_Player.dirX * s_Player.moveSpeed;
       if(map[(int)ny][(int)nx]==0) { s_Player.x = nx; s_Player.y = ny; }
   }
-  if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_RIGHT)){
-
-      float rot = (IsKeyDown(KEY_LEFT) ? s_Player.rotSpeed : -s_Player.rotSpeed);
+  {
+      float rot = -GetMouseDelta().x * 0.003;
 
       float oldDirX = s_Player.dirX;
       s_Player.dirX = s_Player.dirX * cos(rot) - s_Player.dirY * sin(rot);
@@ -375,5 +383,33 @@ void raycaster_update_player()
   }
 
   clEnqueueWriteBuffer(s_queue, s_playerBuffer, CL_TRUE, 0, sizeof(Player), &s_Player, 0, NULL, NULL);
+
+  if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !ui_anim_playing)
+  {
+      ui_anim_playing = 1;
+      ui_anim_timer = 0.0f;
+      ui_current_frame = ui_first_frame;
+  }
+
+  if (ui_anim_playing)
+  {
+      ui_anim_timer += GetFrameTime();
+      float frameTime = 1.0f / ui_anim_fps;
+
+      while (ui_anim_timer >= frameTime)
+      {
+          ui_anim_timer -= frameTime;
+          ui_current_frame++;
+
+          if (ui_current_frame > ui_last_frame)
+          {
+              ui_anim_playing = 0;
+              ui_current_frame = ui_first_frame;
+              break;
+          }
+      }
+  }
+
+  clSetKernelArg(s_spritesKernel,10,sizeof(int),&ui_current_frame);
 }
 

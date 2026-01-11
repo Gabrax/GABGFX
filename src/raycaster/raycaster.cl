@@ -1,15 +1,3 @@
-typedef struct { uchar r, g, b, a; } Pixel;
-typedef struct { float x, y; } Vec2;
-typedef struct { float x, y, z; } Vec3;
-
-typedef struct Mat4 {
-    float x0, x1, x2, x3;
-    float y0, y1, y2, y3;
-    float z0, z1, z2, z3;
-    float w0, w1, w2, w3;
-} Mat4;
-
-
 typedef struct SpriteData {
     float x;
     float y;
@@ -23,12 +11,11 @@ typedef struct SpriteData {
     int texture;
 } SpriteData;
 
-
 typedef struct { float x, y; float dirX, dirY; float planeX, planeY; } Player;
 typedef struct { uchar r,g,b,a; } Color;
 typedef struct Sprite { int offset; int width; int height; } Sprite;
 
-inline Color sample_sprite(
+inline Color sample_color(
     __global Color* atlas,
     __global Sprite* sprites,
     int sprite_id,
@@ -123,7 +110,7 @@ __kernel void surface_kernel(
             Sprite s = sprites[ceiling_tex];
             int texX = (int)((worldX - floor(worldX)) * s.width);
             int texY = (int)((worldY - floor(worldY)) * s.height);
-            framebuffer[idx] = sample_sprite(texture_atlas, sprites, ceiling_tex, texX, texY);
+            framebuffer[idx] = sample_color(texture_atlas, sprites, ceiling_tex, texX, texY);
         }
         else if(y > drawEnd)
         {
@@ -135,7 +122,7 @@ __kernel void surface_kernel(
             Sprite s = sprites[floor_tex];
             int texX = (int)((worldX - floor(worldX)) * s.width);
             int texY = (int)((worldY - floor(worldY)) * s.height);
-            framebuffer[idx] = sample_sprite(texture_atlas, sprites, floor_tex, texX, texY);
+            framebuffer[idx] = sample_color(texture_atlas, sprites, floor_tex, texX, texY);
         }
         else
         {
@@ -164,7 +151,7 @@ __kernel void surface_kernel(
             int d = y * 256 - screen_height * 128 + lineHeight * 128;
             int texY = ((d * s.height) / lineHeight) / 256;
 
-            Color output = sample_sprite(texture_atlas, sprites, tex_id, texX, texY); 
+            Color output = sample_color(texture_atlas, sprites, tex_id, texX, texY); 
             
             framebuffer[idx] = (side == 1) ? (Color){(output.r >> 1) & 8355711,
                                                      (output.g >> 1) & 8355711,
@@ -182,17 +169,19 @@ __kernel void sprites_kernel(
     int screen_width,
     int screen_height,
     __global Player* player,
-    __global SpriteData* spritesData,  // tylko aktywne sprite'y
-    __global int* spriteOrder,         // posortowane wg odległości
-    int numSprites,                     // liczba aktywnych sprite'ów
+    __global SpriteData* spritesData,
+    __global int* spriteOrder,
+    int numSprites,
     __global Color* texture_atlas,
-    __global Sprite* sprites)           // atlas / metadata sprite'ów
+    __global Sprite* sprites,
+    int frameID)
 {
     int stripe = get_global_id(0);
     if (stripe >= screen_width) return;
 
     Player p = player[0];
 
+    // World space sprites
     for (int i = 0; i < numSprites; i++)
     {
         int s = spriteOrder[i]; // indeks w spritesData
@@ -224,7 +213,7 @@ __kernel void sprites_kernel(
 
         if (stripe < drawStartX || stripe > drawEndX) continue;
 
-        int texId = sd.texture; // ID w atlasie
+        int texId = sd.texture;
         if (texId < 0) continue;
 
         Sprite spr = sprites[texId];
@@ -239,10 +228,34 @@ __kernel void sprites_kernel(
             int texY = ((d * spr.height) / spriteHeight) / 256;
             texY = spr.height - texY - 1;
 
-            Color c = sample_sprite(texture_atlas, sprites, texId, texX, texY);
+            Color c = sample_color(texture_atlas, sprites, texId, texX, texY);
 
             if (c.a > 0)
                 framebuffer[y * screen_width + stripe] = c;
         }
+    }
+
+    // Shotgun animation
+    int texId = frameID;
+    int uiW   = 400;
+    int uiH   = 400;
+    int uiX   = (screen_width / 2) - 200;
+    int uiY   = (screen_height / 2) - 100;
+
+    Sprite spr = sprites[texId];
+
+    int texX = (stripe - uiX) * spr.width / uiW;
+
+    for (int y = uiY; y < uiY + uiH; y++)
+    {
+      if (y < 0 || y >= screen_height) continue;
+
+      int texY = (y - uiY) * spr.height / uiH;
+
+      texY = spr.height - texY - 1;
+
+      Color c = sample_color(texture_atlas, sprites, texId, texX, texY);
+
+      if (c.a > 0) framebuffer[y * screen_width + stripe] = c;
     }
 }
