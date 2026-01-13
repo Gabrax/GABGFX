@@ -1,4 +1,4 @@
-#include "raycaster/raycaster.h"
+#include "gabgfx.h"
 #include "raylib.h"
 
 /*const char* map =*/
@@ -57,18 +57,29 @@ SpriteData sprites_data[] = {
 
 int main(void)
 {
-  raycaster_init(800,600);
+  InitWindow(800, 600, "GABGFX");
+  SetTargetFPS(60);
+  DisableCursor();
 
-  raycaster_load_assets(textures, ARR_SIZE(textures), sprites, ARR_SIZE(sprites), sprites_data, ARR_SIZE(sprites_data));
+  gfx_init(RAYCASTER);
+
+  gfx_load_assets(textures, ARR_SIZE(textures), sprites, ARR_SIZE(sprites), sprites_data, ARR_SIZE(sprites_data));
 
   while (!WindowShouldClose())
   {
-    raycaster_update_player();
+    gfx_start_draw();
 
-    /*raycaster_draw_map_state();*/
+    if(IsKeyDown(KEY_W)) gfx_move_camera(FORWARD);
+    if(IsKeyDown(KEY_S)) gfx_move_camera(BACKWARD);
+    if(IsKeyDown(KEY_A)) gfx_move_camera(LEFT);
+    if(IsKeyDown(KEY_D)) gfx_move_camera(RIGHT);
 
-    raycaster_draw();
+    gfx_update_camera();
+
+    gfx_draw_map_state();
+
+    gfx_end_draw();
   }
 
-  raycaster_close();
+  gfx_close();
 }
