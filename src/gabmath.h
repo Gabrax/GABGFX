@@ -7,43 +7,43 @@ float GCD(float a, float b);
 float LCM(float a, float b);
 void isPrime(int val);
 
-typedef struct f2 { float x,y; } f2;
-typedef struct f3 { float x,y,z; } f3;
+typedef struct Vec2 { float x,y; } Vec2;
+typedef struct Vec3 { float x,y,z; } Vec3;
 typedef struct f4 { float x,y,z,w; } f4;
 
-void f2Print(f2* v);
-void f3Print(f3* v);
+void Vec2Print(Vec2* v);
+void Vec3Print(Vec3* v);
 
-f2 f2Norm(f2 v);
-float f2Len(f2 v);
+Vec2 Vec2Norm(Vec2 v);
+float Vec2Len(Vec2 v);
 
-f3 f3Add(f3 v1, f3 v2);
-f3 f3Sub(f3 v1, f3 v2);
-f3 f3Mul(f3 v1, f3 v2);
-f3 f3MulS(f3 v, float scalar);
-f3 f3Cross(f3 v1, f3 v2); // returns orthogonal vector
-f3 f3Norm(f3 v);
-f3 f3Reflect(f3 I, f3 N);
-float f3Dot(f3 v1, f3 v2);
-float f3Len(f3 v);
-float f3Theta(f3 v1, f3 v2); // returns angle in radians between vectors (reverse cos)
+Vec3 Vec3Add(Vec3 v1, Vec3 v2);
+Vec3 Vec3Sub(Vec3 v1, Vec3 v2);
+Vec3 Vec3Mul(Vec3 v1, Vec3 v2);
+Vec3 Vec3MulS(Vec3 v, float scalar);
+Vec3 Vec3Cross(Vec3 v1, Vec3 v2); // returns orthogonal vector
+Vec3 Vec3Norm(Vec3 v);
+Vec3 Vec3Reflect(Vec3 I, Vec3 N);
+float Vec3Dot(Vec3 v1, Vec3 v2);
+float Vec3Len(Vec3 v);
+float Vec3Theta(Vec3 v1, Vec3 v2); // returns angle in radians between vectors (reverse cos)
 
 // COLUMN-MAJOR
-typedef struct f3x3 { float f[3][3]; } f3x3;
-typedef struct f4x4 { float f[4][4]; } f4x4;
+typedef struct Mat3 { float f[3][3]; } Mat3;
+typedef struct Mat4 { float f[4][4]; } Mat4;
 
-void MatPrint(f4x4* mat);
-f4x4 MatMul(f4x4 a, f4x4 b);
-f4x4 MatIdentity();
-f4x4 MatPerspective(float fov_rad, float aspect_ratio, float near_plane, float far_plane);
-f4x4 MatTranslate(const f4x4 mat, f3 position);
-f4x4 MatRotateX(const f4x4 mat, float radians);
-f4x4 MatRotateY(const f4x4 mat, float radians);
-f4x4 MatRotateZ(const f4x4 mat, float radians);
-f4x4 MatScale(const f4x4 mat, f3 scale);
-f4x4 MatTransform(f3 position, f3 deg_rotation, f3 scale);
-f4x4 MatInverseRT(const f4x4* m);
-f4x4 MatLookAt(f3 position, f3 target, f3 up);
+void MatPrint(Mat4* mat);
+Mat4 MatMul(Mat4 a, Mat4 b);
+Mat4 MatIdentity();
+Mat4 MatPerspective(float fov_rad, float aspect_ratio, float near_plane, float far_plane);
+Mat4 MatTranslate(const Mat4 mat, Vec3 position);
+Mat4 MatRotateX(const Mat4 mat, float radians);
+Mat4 MatRotateY(const Mat4 mat, float radians);
+Mat4 MatRotateZ(const Mat4 mat, float radians);
+Mat4 MatScale(const Mat4 mat, Vec3 scale);
+Mat4 MatTransform(Vec3 position, Vec3 deg_rotation, Vec3 scale);
+Mat4 MatInverseRT(const Mat4* m);
+Mat4 MatLookAt(Vec3 position, Vec3 target, Vec3 up);
 
 #endif // GABMATH_H
 
@@ -81,75 +81,75 @@ void isPrime(int val)
   if(count == 2) printf("%d ", val);
 }
 
-void f2Print(f2* v)
+void Vec2Print(Vec2* v)
 {
   printf("[ %f %f ]\n", v->x,v->y);
 }
-float f2Len(f2 v)
+float Vec2Len(Vec2 v)
 {
   return sqrtf(v.x * v.x + v.y * v.y);
 }
-f2 f2Norm(f2 v)
+Vec2 Vec2Norm(Vec2 v)
 {
-  float len = f2Len(v);
-  return (f2){ v.x / len, v.y / len};
+  float len = Vec2Len(v);
+  return (Vec2){ v.x / len, v.y / len};
 }
-void f3Print(f3* v)
+void Vec3Print(Vec3* v)
 {
   printf("[ %f %f %f ]\n", v->x,v->y,v->z);
 }
-f3 f3Add(f3 v1, f3 v2)
+Vec3 Vec3Add(Vec3 v1, Vec3 v2)
 {
-  return (f3){v1.x + v2.x, v1.y + v2.y, v1.z + v2.z};
+  return (Vec3){v1.x + v2.x, v1.y + v2.y, v1.z + v2.z};
 }
-f3 f3Sub(f3 v1, f3 v2)
+Vec3 Vec3Sub(Vec3 v1, Vec3 v2)
 {
-  return (f3){v2.x - v1.x, v2.y - v1.y, v2.z - v1.z};
+  return (Vec3){v2.x - v1.x, v2.y - v1.y, v2.z - v1.z};
 }
-f3 f3Mul(f3 v1, f3 v2)
+Vec3 Vec3Mul(Vec3 v1, Vec3 v2)
 {
-  return (f3){ v1.x * v2.x, v1.y * v2.y, v1.z * v2.z };
+  return (Vec3){ v1.x * v2.x, v1.y * v2.y, v1.z * v2.z };
 }
-f3 f3MulS(f3 v, float scalar)
+Vec3 Vec3MulS(Vec3 v, float scalar)
 {
-  return (f3){ v.x * scalar, v.y * scalar, v.z * scalar };
+  return (Vec3){ v.x * scalar, v.y * scalar, v.z * scalar };
 }
-f3 f3Cross(f3 v1, f3 v2) // Returns orthogonal vector
+Vec3 Vec3Cross(Vec3 v1, Vec3 v2) // Returns orthogonal vector
 {
-  return (f3){v1.y * v2.z - v1.z * v2.y,v1.z * v2.x - v1.x * v2.z,v1.x * v2.y - v1.y * v2.x};
+  return (Vec3){v1.y * v2.z - v1.z * v2.y,v1.z * v2.x - v1.x * v2.z,v1.x * v2.y - v1.y * v2.x};
 }
-float f3Dot(f3 v1, f3 v2)
+float Vec3Dot(Vec3 v1, Vec3 v2)
 {
   return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
 }
-float f3Len(f3 v)
+float Vec3Len(Vec3 v)
 {
   return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
 }
-float f3Theta(f3 v1, f3 v2) // returns angle in radians between vectors (reverse cos)
+float Vec3Theta(Vec3 v1, Vec3 v2) // returns angle in radians between vectors (reverse cos)
 {
-  return acosf(f3Dot(v1, v2) / (f3Len(v1) * f3Len(v2)));
+  return acosf(Vec3Dot(v1, v2) / (Vec3Len(v1) * Vec3Len(v2)));
 }
-f3 f3Norm(f3 v)
+Vec3 Vec3Norm(Vec3 v)
 {
-  float len = f3Len(v);
-  return (f3){ v.x / len, v.y / len, v.z / len };
+  float len = Vec3Len(v);
+  return (Vec3){ v.x / len, v.y / len, v.z / len };
 }
-f3 f3Reflect(f3 I, f3 N)
+Vec3 Vec3Reflect(Vec3 I, Vec3 N)
 {
-  return f3Sub(I, f3MulS(N, 2.0f * f3Dot(N, I)));
+  return Vec3Sub(I, Vec3MulS(N, 2.0f * Vec3Dot(N, I)));
 }
 
-void MatPrint(f4x4* mat)
+void MatPrint(Mat4* mat)
 {
   printf("[ %f %f %f %f ]\n", mat->f[0][0],mat->f[0][1],mat->f[0][2],mat->f[0][3]);
   printf("[ %f %f %f %f ]\n", mat->f[1][0],mat->f[1][1],mat->f[1][2],mat->f[1][3]);
   printf("[ %f %f %f %f ]\n", mat->f[2][0],mat->f[2][1],mat->f[2][2],mat->f[2][3]);
   printf("[ %f %f %f %f ]\n", mat->f[3][0],mat->f[3][1],mat->f[3][2],mat->f[3][3]);
 }
-f4x4 MatMul(f4x4 a, f4x4 b)
+Mat4 MatMul(Mat4 a, Mat4 b)
 {
-  f4x4 result = {0};
+  Mat4 result = {0};
 
   // Row 0
   result.f[0][0] = a.f[0][0]*b.f[0][0] + a.f[0][1]*b.f[1][0] + a.f[0][2]*b.f[2][0] + a.f[0][3]*b.f[3][0];
@@ -177,18 +177,18 @@ f4x4 MatMul(f4x4 a, f4x4 b)
 
   return result;
 }
-f4x4 MatIdentity()
+Mat4 MatIdentity()
 {
-  f4x4 mat = { 0 };
+  Mat4 mat = { 0 };
   mat.f[0][0]  = 1.0f;  
   mat.f[1][1]  = 1.0f;
   mat.f[2][2] = 1.0f;
   mat.f[3][3] = 1.0f;
   return mat;
 }
-f4x4 MatPerspective(float fov_rad, float aspect_ratio, float near_plane, float far_plane)
+Mat4 MatPerspective(float fov_rad, float aspect_ratio, float near_plane, float far_plane)
 {
-  f4x4 mat = { 0 };  
+  Mat4 mat = { 0 };  
   mat.f[0][0]  = fov_rad / aspect_ratio;      // 1/(tan(fov/2)*aspect)
   mat.f[1][1]  = fov_rad;          // 1/tan(fov/2)
   mat.f[2][2] = -(far_plane + near_plane) / (far_plane - near_plane);
@@ -197,46 +197,46 @@ f4x4 MatPerspective(float fov_rad, float aspect_ratio, float near_plane, float f
   mat.f[3][3] = 0.0f;
   return mat;
 };
-f4x4 MatTranslate(const f4x4 mat, f3 position)
+Mat4 MatTranslate(const Mat4 mat, Vec3 position)
 {
-  f4x4 trans = MatIdentity();
+  Mat4 trans = MatIdentity();
   trans.f[0][3] = position.x;
   trans.f[1][3] = position.y;
   trans.f[2][3] = position.z;
   return MatMul(mat, trans);
 }
-f4x4 MatRotateX(const f4x4 mat, float radians)
+Mat4 MatRotateX(const Mat4 mat, float radians)
 {
-  f4x4 rot = MatIdentity();
+  Mat4 rot = MatIdentity();
   rot.f[1][1] = cosf(radians); rot.f[1][2] = -sinf(radians);
   rot.f[2][1] = sinf(radians); rot.f[2][2] = cosf(radians);
   return MatMul(mat, rot);
 }
-f4x4 MatRotateY(const f4x4 mat, float radians)
+Mat4 MatRotateY(const Mat4 mat, float radians)
 {
-  f4x4 rot = MatIdentity();
+  Mat4 rot = MatIdentity();
   rot.f[0][0] = cosf(radians);  rot.f[0][2] = sinf(radians);
   rot.f[2][0] = -sinf(radians); rot.f[2][2] = cosf(radians);
   return MatMul(mat, rot);
 }
-f4x4 MatRotateZ(const f4x4 mat, float radians)
+Mat4 MatRotateZ(const Mat4 mat, float radians)
 {
-  f4x4 rot = MatIdentity();
+  Mat4 rot = MatIdentity();
   rot.f[0][0] = cosf(radians); rot.f[0][1] = -sinf(radians);
   rot.f[1][0] = sinf(radians); rot.f[1][1] = cosf(radians);
   return MatMul(mat, rot);
 }
-f4x4 MatScale(const f4x4 mat, f3 scale)
+Mat4 MatScale(const Mat4 mat, Vec3 scale)
 {
-  f4x4 s = MatIdentity();
+  Mat4 s = MatIdentity();
   s.f[0][0] = scale.x;
   s.f[1][1] = scale.y;
   s.f[2][2] = scale.z;
   return MatMul(mat, s);
 }
-f4x4 MatTransform(f3 position, f3 deg_rotation, f3 scale)
+Mat4 MatTransform(Vec3 position, Vec3 deg_rotation, Vec3 scale)
 {
-  f4x4 mat = MatIdentity();
+  Mat4 mat = MatIdentity();
 
   mat = MatTranslate(mat, position);
 
@@ -248,9 +248,9 @@ f4x4 MatTransform(f3 position, f3 deg_rotation, f3 scale)
 
   return mat;
 }
-f4x4 MatInverseRT(const f4x4* m)
+Mat4 MatInverseRT(const Mat4* m)
 {
-  f4x4 inv = {0};
+  Mat4 inv = {0};
 
   // transpose rotation part
   inv.f[0][0] = m->f[0][0]; inv.f[0][1] = m->f[1][0]; inv.f[0][2] = m->f[2][0];
@@ -267,18 +267,18 @@ f4x4 MatInverseRT(const f4x4* m)
 
   return inv;
 }
-f4x4 MatLookAt(f3 position, f3 target, f3 up)
+Mat4 MatLookAt(Vec3 position, Vec3 target, Vec3 up)
 {
-  f3 f = f3Norm(f3Sub(target, position));  // forward
-  f3 s = f3Norm(f3Cross(up, f));           // right (swapped order)
-  f3 u = f3Cross(f, s);                      // true up
+  Vec3 f = Vec3Norm(Vec3Sub(target, position));  // forward
+  Vec3 s = Vec3Norm(Vec3Cross(up, f));           // right (swapped order)
+  Vec3 u = Vec3Cross(f, s);                      // true up
 
-  f4x4 mat = MatIdentity();
+  Mat4 mat = MatIdentity();
 
   // Rotation part (basis vectors)
-  mat.f[0][0] = s.x;  mat.f[0][1] = s.y;  mat.f[0][2] = s.z;  mat.f[0][3] = -f3Dot(s, position);
-  mat.f[1][0] = u.x;  mat.f[1][1] = u.y;  mat.f[1][2] = u.z;  mat.f[1][3] = -f3Dot(u, position);
-  mat.f[2][0] = -f.x; mat.f[2][1] = -f.y; mat.f[2][2] = -f.z; mat.f[2][3] =  f3Dot(f, position);
+  mat.f[0][0] = s.x;  mat.f[0][1] = s.y;  mat.f[0][2] = s.z;  mat.f[0][3] = -Vec3Dot(s, position);
+  mat.f[1][0] = u.x;  mat.f[1][1] = u.y;  mat.f[1][2] = u.z;  mat.f[1][3] = -Vec3Dot(u, position);
+  mat.f[2][0] = -f.x; mat.f[2][1] = -f.y; mat.f[2][2] = -f.z; mat.f[2][3] =  Vec3Dot(f, position);
   mat.f[3][0] = 0.0f; mat.f[3][1] = 0.0f; mat.f[3][2] = 0.0f; mat.f[3][3] = 1.0f;
 
   return mat;

@@ -1,7 +1,7 @@
 #include "gabgfx.h"
 
 #define GABMATH_IMPLEMENTATION
-#include "gab_math.h"
+#include "gabmath.h"
 #define STB_DS_IMPLEMENTATION
 #include "stb_ds.h"
 #include <assimp/cimport.h>
@@ -11,6 +11,169 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
+
+const char* getErrorString(cl_int error)
+{
+switch(error){
+    // run-time and JIT compiler errors
+    case 0: return "CL_SUCCESS";
+    case -1: return "CL_DEVICE_NOT_FOUND";
+    case -2: return "CL_DEVICE_NOT_AVAILABLE";
+    case -3: return "CL_COMPILER_NOT_AVAILABLE";
+    case -4: return "CL_MEM_OBJECT_ALLOCATION_FAILURE";
+    case -5: return "CL_OUT_OF_RESOURCES";
+    case -6: return "CL_OUT_OF_HOST_MEMORY";
+    case -7: return "CL_PROFILING_INFO_NOT_AVAILABLE";
+    case -8: return "CL_MEM_COPY_OVERLAP";
+    case -9: return "CL_IMAGE_FORMAT_MISMATCH";
+    case -10: return "CL_IMAGE_FORMAT_NOT_SUPPORTED";
+    case -11: return "CL_BUILD_PROGRAM_FAILURE";
+    case -12: return "CL_MAP_FAILURE";
+    case -13: return "CL_MISALIGNED_SUB_BUFFER_OFFSET";
+    case -14: return "CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST";
+    case -15: return "CL_COMPILE_PROGRAM_FAILURE";
+    case -16: return "CL_LINKER_NOT_AVAILABLE";
+    case -17: return "CL_LINK_PROGRAM_FAILURE";
+    case -18: return "CL_DEVICE_PARTITION_FAILED";
+    case -19: return "CL_KERNEL_ARG_INFO_NOT_AVAILABLE";
+
+    // compile-time errors
+    case -30: return "CL_INVALID_VALUE";
+    case -31: return "CL_INVALID_DEVICE_TYPE";
+    case -32: return "CL_INVALID_PLATFORM";
+    case -33: return "CL_INVALID_DEVICE";
+    case -34: return "CL_INVALID_CONTEXT";
+    case -35: return "CL_INVALID_QUEUE_PROPERTIES";
+    case -36: return "CL_INVALID_COMMAND_QUEUE";
+    case -37: return "CL_INVALID_HOST_PTR";
+    case -38: return "CL_INVALID_MEM_OBJECT";
+    case -39: return "CL_INVALID_IMAGE_FORMAT_DESCRIPTOR";
+    case -40: return "CL_INVALID_IMAGE_SIZE";
+    case -41: return "CL_INVALID_SAMPLER";
+    case -42: return "CL_INVALID_BINARY";
+    case -43: return "CL_INVALID_BUILD_OPTIONS";
+    case -44: return "CL_INVALID_PROGRAM";
+    case -45: return "CL_INVALID_PROGRAM_EXECUTABLE";
+    case -46: return "CL_INVALID_KERNEL_NAME";
+    case -47: return "CL_INVALID_KERNEL_DEFINITION";
+    case -48: return "CL_INVALID_KERNEL";
+    case -49: return "CL_INVALID_ARG_INDEX";
+    case -50: return "CL_INVALID_ARG_VALUE";
+    case -51: return "CL_INVALID_ARG_SIZE";
+    case -52: return "CL_INVALID_KERNEL_ARGS";
+    case -53: return "CL_INVALID_WORK_DIMENSION";
+    case -54: return "CL_INVALID_WORK_GROUP_SIZE";
+    case -55: return "CL_INVALID_WORK_ITEM_SIZE";
+    case -56: return "CL_INVALID_GLOBAL_OFFSET";
+    case -57: return "CL_INVALID_EVENT_WAIT_LIST";
+    case -58: return "CL_INVALID_EVENT";
+    case -59: return "CL_INVALID_OPERATION";
+    case -60: return "CL_INVALID_GL_OBJECT";
+    case -61: return "CL_INVALID_BUFFER_SIZE";
+    case -62: return "CL_INVALID_MIP_LEVEL";
+    case -63: return "CL_INVALID_GLOBAL_WORK_SIZE";
+    case -64: return "CL_INVALID_PROPERTY";
+    case -65: return "CL_INVALID_IMAGE_DESCRIPTOR";
+    case -66: return "CL_INVALID_COMPILER_OPTIONS";
+    case -67: return "CL_INVALID_LINKER_OPTIONS";
+    case -68: return "CL_INVALID_DEVICE_PARTITION_COUNT";
+
+    // extension errors
+    case -1000: return "CL_INVALID_GL_SHAREGROUP_REFERENCE_KHR";
+    case -1001: return "CL_PLATFORM_NOT_FOUND_KHR";
+    case -1002: return "CL_INVALID_D3D10_DEVICE_KHR";
+    case -1003: return "CL_INVALID_D3D10_RESOURCE_KHR";
+    case -1004: return "CL_D3D10_RESOURCE_ALREADY_ACQUIRED_KHR";
+    case -1005: return "CL_D3D10_RESOURCE_NOT_ACQUIRED_KHR";
+    default: return "Unknown OpenCL error";
+    }
+}
+
+#define CL_CHECK_PROGRAM(context, filename, program, device) do { \
+    FILE* file = fopen(filename, "rb"); \
+    if (!file) { \
+        printf("Cannot open kernel file: %s\n", filename); \
+        program = NULL; \
+        exit(1); \
+    } \
+    fseek(file, 0, SEEK_END); \
+    size_t size = ftell(file); \
+    rewind(file); \
+    char* src = (char*)malloc(size + 1); \
+    fread(src, 1, size, file); \
+    src[size] = '\0'; \
+    fclose(file); \
+    program = clCreateProgramWithSource(context, 1, (const char**)&src, NULL, &s_err); \
+    free(src); \
+    if (s_err != CL_SUCCESS) { \
+        printf("clCreateProgramWithSource failed: %d at %s:%d\n", s_err, __FILE__, __LINE__); \
+        printf("OpenCL error :%s\n",getErrorString(s_err)); \
+        program = NULL; \
+        exit(1); \
+    } \
+    s_err = clBuildProgram(program, 1, &device, NULL, NULL, NULL); \
+    if (s_err != CL_SUCCESS) { \
+        size_t log_size; \
+        clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size); \
+        char* log = (char*)malloc(log_size); \
+        clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL); \
+        printf("OpenCL build error in %s:\n%s\n", filename, log); \
+        free(log); \
+        clReleaseProgram(program); \
+        program = NULL; \
+        exit(1); \
+    } \
+} while(0)
+
+#define CL_CHECK_KERNEL(var, name) do { \
+    var = clCreateKernel(s_program, name, &s_err); \
+    if (s_err != CL_SUCCESS) { \
+        printf("Failed to create kernel '%s': at %s:%d\n", \
+               #name, __FILE__, __LINE__); \
+        printf("OpenCL error :%s\n",getErrorString(s_err)); \
+        exit(1); \
+    } \
+} while (0)
+
+#define CL_CHECK_BUFFER(buffer, cl_enum, buffer_size, host_ptr) do { \
+    buffer = clCreateBuffer(s_context, cl_enum, buffer_size, host_ptr, &s_err); \
+    if (s_err != CL_SUCCESS) { \
+        printf("Failed to create buffer '%s': at %s:%d\n", \
+               #buffer, __FILE__, __LINE__); \
+        printf("OpenCL error :%s\n",getErrorString(s_err)); \
+        exit(1); \
+    } \
+} while (0)
+
+#define CL_CHECK_SET_KERNEL_ARG(kernel, arg_index, arg_size, arg) do { \
+    s_err = clSetKernelArg(kernel, arg_index, arg_size, &arg); \
+    if (s_err != CL_SUCCESS) { \
+        printf("Failed to set arg '%s': at %s:%d\n", \
+               #arg, __FILE__, __LINE__); \
+        printf("OpenCL error :%s\n",getErrorString(s_err)); \
+        exit(1); \
+    } \
+} while (0)
+
+#define CL_CHECK_WRITE_BUFFER(buffer,block,offset,arg_size,arg) do { \
+    s_err = clEnqueueWriteBuffer(s_queue, buffer, block, \
+                                 offset, arg_size, &arg, 0, NULL, NULL); \
+    if (s_err != CL_SUCCESS) { \
+        printf("Failed to set arg '%s': at %s:%d\n", \
+               #arg, __FILE__, __LINE__); \
+        printf("OpenCL error :%s\n",getErrorString(s_err)); \
+        exit(1); \
+    } \
+} while(0)
+
+#define CL_CHECK(func) do { \
+  s_err = func; \
+  if (s_err != CL_SUCCESS) { \
+      printf("Failed at %s:%d\n", __FILE__, __LINE__); \
+      printf("OpenCL error :%s\n",getErrorString(s_err)); \
+      exit(1); \
+  } \
+} while(0)
 
 static RenderMode s_mode;
 
@@ -39,8 +202,6 @@ static cl_mem s_trianglesBuffer;
 static cl_mem s_pixelsBuffer;
 static cl_mem s_modelsBuffer;
 
-static cl_mem s_frameBuffer;
-static cl_mem s_depthBuffer;
 static cl_mem s_playerBuffer;
 static cl_mem s_spritesBuffer;
 static cl_mem s_textureBuffer;
@@ -50,8 +211,8 @@ static cl_mem s_spriteOrderBuffer;
 static cl_mem s_spriteDistanceBuffer;
 
 typedef struct {
-  f3 Position, Front, Up, Right, WorldUp;
-  f4x4 proj, look_at;
+  Vec3 Position, Front, Up, Right, WorldUp;
+  Mat4 proj, look_at;
   float near_plane, far_plane, fov, fov_rad, aspect_ratio, yaw, pitch, speed, sens, lastX, lastY, deltaTime;
   bool firstMouse;
 } CustomCamera;
@@ -59,27 +220,32 @@ typedef struct {
 static CustomCamera s_camera = {0};
 
 typedef struct {
-    f3 vertex[3]; 
-    f3 normal[3];
-    f2 uv[3];
+    Vec3 vertex[3]; 
+    Vec3 normal[3];
+    Vec2 uv[3];
     int modelIdx;
 } Triangle;
 
 typedef struct {
   int triangleOffset, triangleCount, vertexOffset, vertexCount, pixelOffset, texWidth, texHeight;
-  f4x4 transform;
+  Mat4 transform;
 } CustomModel;
 
 typedef struct {
     int offset, width, height;
 } Sprite;
 
+typedef struct { float dist; int index; } SpriteSort;
+
 typedef struct {
     float x, y, dirX, dirY, planeX, planeY, moveSpeed, rotSpeed;
 } Player;
 
 static Color s_backgroundColor;
-static size_t s_screenResolution[2];
+static size_t s_screenSize[2];
+static uint32_t s_width;
+static uint32_t s_height;
+static uint32_t s_screenResolution;
 static Color* s_pixelBuffer = NULL;
 static Texture2D s_outputTexture;
 
@@ -93,9 +259,6 @@ static size_t s_totalTexturePixels = 0;
 static size_t s_triOffset = 0;
 static size_t s_pixOffset = 0;
 
-static size_t s_screenResolution[2];
-static Texture2D s_outputTexture;
-
 static Player s_Player;
 
 static Sprite* s_Sprites = NULL;
@@ -105,13 +268,13 @@ static size_t s_numSprites;
 static int s_spriteOrder[120];
 static SpriteData s_spritesData[120]; 
 
-static int ui_first_frame = 17;
-static int ui_last_frame  = 23;
-static int ui_current_frame = 17;
+static int s_ui_first_frame = 17;
+static int s_ui_last_frame  = 23;
+static int s_ui_current_frame = 17;
 
-static int ui_anim_playing = 0;
-static float ui_anim_timer = 0.0f;
-static float ui_anim_fps   = 6.0f;
+static int s_ui_anim_playing = 0;
+static float s_ui_anim_timer = 0.0f;
+static float s_ui_anim_fps   = 6.0f;
 
 unsigned char map[11][11] = {
     {1,1,1,1,1,1,1,1,1,1,1},
@@ -127,64 +290,31 @@ unsigned char map[11][11] = {
     {1,1,1,1,1,1,1,1,1,1,1}
 };
 
-static inline const char* raycaster_load_kernel(const char* filename)
-{
-  FILE* f = fopen(filename, "rb");
-  if(!f) { printf("Cannot open kernel file.\n"); return NULL; }
-  fseek(f,0,SEEK_END);
-  size_t size = ftell(f);
-  fseek(f,0,SEEK_SET);
-  char* src = (char*)malloc(size+1);
-  fread(src,1,size,f);
-  src[size] = '\0';
-  fclose(f);
-  return src;
-}
-
-typedef struct {
-    float dist;
-    int index;
-} SpriteSort;
-
 static inline int sprite_cmp(const void* a, const void* b)
 {
     float d = ((SpriteSort*)b)->dist - ((SpriteSort*)a)->dist;
     return (d > 0) - (d < 0); // malejąco
 }
 
-static inline void prepareSprites(
+static inline void sortSprites(
     Player* p,
     SpriteData* sprites,
     int num,
     int* spriteOrder)
 {
-    SpriteSort tmp[120];
+  SpriteSort tmp[120];
 
-    for (int i = 0; i < num; i++) {
-        float dx = p->x - sprites[i].x;
-        float dy = p->y - sprites[i].y;
-        tmp[i].dist = dx*dx + dy*dy;
-        tmp[i].index = i;
-    }
+  for (int i = 0; i < num; i++) {
+      float dx = p->x - sprites[i].x;
+      float dy = p->y - sprites[i].y;
+      tmp[i].dist = dx*dx + dy*dy;
+      tmp[i].index = i;
+  }
 
-    qsort(tmp, num, sizeof(SpriteSort), sprite_cmp);
+  qsort(tmp, num, sizeof(SpriteSort), sprite_cmp);
 
-    for (int i = 0; i < num; i++)
-        spriteOrder[i] = tmp[i].index;
-}
-
-static const char* gfx_load_kernel(const char* filename)
-{
-  FILE* f = fopen(filename, "rb");
-  if(!f) { printf("Cannot open kernel file.\n"); return NULL; }
-  fseek(f,0,SEEK_END);
-  size_t size = ftell(f);
-  fseek(f,0,SEEK_SET);
-  char* src = (char*)malloc(size+1);
-  fread(src,1,size,f);
-  src[size] = '\0';
-  fclose(f);
-  return src;
+  for (int i = 0; i < num; i++)
+      spriteOrder[i] = tmp[i].index;
 }
 
 void gfx_init(RenderMode mode)
@@ -195,7 +325,7 @@ void gfx_init(RenderMode mode)
     exit(1);
   }
   
-  s_screenResolution[0] = GetScreenWidth(); s_screenResolution[1] = GetScreenHeight();
+  s_screenSize[0] = GetScreenWidth(); s_screenSize[1] = GetScreenHeight();
 
   s_mode = mode;
 
@@ -207,112 +337,143 @@ void gfx_init(RenderMode mode)
   
   if(s_mode == RASTERIZER)
   {
-    const char* kernelSource = gfx_load_kernel("src/rasterizer.cl"); 
-    s_program = clCreateProgramWithSource(s_context, 1, &kernelSource, NULL, &s_err);
-    if (s_err != CL_SUCCESS) { printf("Error creating program: %d\n", s_err); }
+    CL_CHECK_PROGRAM(s_context, "src/rasterizer.cl", s_program, s_device);
 
-    s_err = clBuildProgram(s_program, 1, &s_device, NULL, NULL, NULL);
-    if (s_err != CL_SUCCESS)
-    {
-      size_t log_size;
-      clGetProgramBuildInfo(s_program, s_device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
-      char* log = (char*)malloc(log_size);
-      clGetProgramBuildInfo(s_program, s_device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
-      printf("OpenCL build error:\n%s\n", log);
-      free(log);
-    }
+    CL_CHECK_KERNEL(s_clearKernel,"clear_buffers");
+    CL_CHECK_KERNEL(s_vertexKernel,"vertex_kernel");
+    CL_CHECK_KERNEL(s_fragmentKernel,"fragment_kernel");
 
-    s_clearKernel    = clCreateKernel(s_program, "clear_buffers", NULL);
-    s_vertexKernel   = clCreateKernel(s_program, "vertex_kernel", NULL);
-    s_fragmentKernel = clCreateKernel(s_program, "fragment_kernel", NULL);
+    CL_CHECK_BUFFER(s_frameBuffer,CL_MEM_READ_WRITE,sizeof(Color)*s_screenSize[0]*s_screenSize[1],NULL);
+    CL_CHECK_BUFFER(s_depthBuffer,CL_MEM_READ_WRITE,sizeof(uint32_t)*s_screenSize[0]*s_screenSize[1],NULL);
 
-    s_frameBuffer = clCreateBuffer(s_context, CL_MEM_WRITE_ONLY, s_screenResolution[0] * s_screenResolution[1] * sizeof(Color), NULL, NULL);
-    s_depthBuffer = clCreateBuffer(s_context, CL_MEM_READ_WRITE, sizeof(cl_uint) * s_screenResolution[0] * s_screenResolution[1], NULL, &s_err);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 0, sizeof(cl_mem), s_frameBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 1, sizeof(cl_mem), s_depthBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 2, sizeof(int), s_screenSize[0]);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 3, sizeof(int), s_screenSize[1]);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 4, sizeof(Color), ((Color){0,0,0,255}));
 
-    clSetKernelArg(s_clearKernel, 0, sizeof(cl_mem), &s_frameBuffer);
-    clSetKernelArg(s_clearKernel, 1, sizeof(cl_mem), &s_depthBuffer);
-    clSetKernelArg(s_clearKernel, 2, sizeof(int), &s_screenResolution[0]);
-    clSetKernelArg(s_clearKernel, 3, sizeof(int), &s_screenResolution[1]);
-    clSetKernelArg(s_clearKernel, 4, sizeof(Color), &(Color){0,0,0,255});
-    clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
+    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 8, sizeof(int), s_screenSize[0]);
+    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 9, sizeof(int), s_screenSize[1]);
 
-    clSetKernelArg(s_vertexKernel, 8, sizeof(int), &s_screenResolution[0]);
-    clSetKernelArg(s_vertexKernel, 9, sizeof(int), &s_screenResolution[1]);
-
-    clSetKernelArg(s_fragmentKernel, 0, sizeof(cl_mem), &s_frameBuffer);
-    clSetKernelArg(s_fragmentKernel, 2, sizeof(int), &s_screenResolution[0]);
-    clSetKernelArg(s_fragmentKernel, 3, sizeof(int), &s_screenResolution[1]);
-    clSetKernelArg(s_fragmentKernel, 4, sizeof(cl_mem), &s_depthBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 0, sizeof(cl_mem), s_frameBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 2, sizeof(int), s_screenSize[0]);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 3, sizeof(int), s_screenSize[1]);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 4, sizeof(cl_mem), s_depthBuffer);
 
   }
   else if(s_mode == RAYCASTER)
   {
-    s_Player = (Player){5.5f,5.5f,-1.0f,0.0f,0.0f,0.66f,0.05f,0.03f};
+    CL_CHECK_PROGRAM(s_context, "src/raycaster.cl", s_program, s_device);
 
-    const char* kernel_source = raycaster_load_kernel("src/raycaster.cl");
-    s_program = clCreateProgramWithSource(s_context, 1, &kernel_source, NULL, NULL);
+    CL_CHECK_KERNEL(s_surfaceKernel,"surface_kernel");
+    CL_CHECK_KERNEL(s_spritesKernel,"sprites_kernel");
 
-    s_err = clBuildProgram(s_program, 1, &s_device, NULL, NULL, NULL);
-    if (s_err != CL_SUCCESS)
-    {
-      size_t log_size;
-      clGetProgramBuildInfo(s_program, s_device, CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
-      char* log = (char*)malloc(log_size);
-      clGetProgramBuildInfo(s_program, s_device, CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
-      printf("OpenCL build error:\n%s\n", log);
-      free(log);
-    }
+    CL_CHECK_BUFFER(s_frameBuffer,CL_MEM_READ_WRITE,sizeof(Color)*s_screenSize[0]*s_screenSize[1],NULL);
+    CL_CHECK_BUFFER(s_depthBuffer,CL_MEM_READ_WRITE,sizeof(float)*s_screenSize[0],NULL);
+    CL_CHECK_BUFFER(s_playerBuffer,CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,sizeof(Player), &s_Player);
+    CL_CHECK_BUFFER(s_mapBuffer,CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,sizeof(map), &map);
 
-    s_surfaceKernel = clCreateKernel(s_program, "surface_kernel", NULL);
-    s_spritesKernel = clCreateKernel(s_program, "sprites_kernel", NULL);
-
-    s_frameBuffer  = clCreateBuffer(s_context, CL_MEM_READ_WRITE, sizeof(Color)*s_screenResolution[0]*s_screenResolution[1], NULL, NULL);
-    s_depthBuffer  = clCreateBuffer(s_context,CL_MEM_READ_WRITE, sizeof(float)*s_screenResolution[0],NULL,NULL);
-    s_playerBuffer = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(Player), &s_Player, NULL);
-    s_mapBuffer    = clCreateBuffer(s_context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(map), &map, NULL);
-
-    clSetKernelArg(s_surfaceKernel, 0, sizeof(cl_mem), &s_frameBuffer);
-    clSetKernelArg(s_surfaceKernel, 1, sizeof(cl_mem), &s_depthBuffer);
-    clSetKernelArg(s_surfaceKernel, 2, sizeof(int), &s_screenResolution[0]);
-    clSetKernelArg(s_surfaceKernel, 3, sizeof(int), &s_screenResolution[1]);
-    clSetKernelArg(s_surfaceKernel, 4, sizeof(cl_mem), &s_playerBuffer);
-    clSetKernelArg(s_surfaceKernel, 5, sizeof(cl_mem), &s_mapBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 0, sizeof(cl_mem), s_frameBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 1, sizeof(cl_mem), s_depthBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 2, sizeof(int), s_screenSize[0]);
+    CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 3, sizeof(int), s_screenSize[1]);
+    CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 4, sizeof(cl_mem), s_playerBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 5, sizeof(cl_mem), s_mapBuffer);
     int map_size = 11;
-    clSetKernelArg(s_surfaceKernel, 6, sizeof(int), &map_size);
+    CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 6, sizeof(int), map_size);
 
-    clSetKernelArg(s_spritesKernel, 0, sizeof(cl_mem), &s_frameBuffer);
-    clSetKernelArg(s_spritesKernel, 1, sizeof(cl_mem), &s_depthBuffer);
-    clSetKernelArg(s_spritesKernel, 2, sizeof(int), &s_screenResolution[0]);
-    clSetKernelArg(s_spritesKernel, 3, sizeof(int), &s_screenResolution[1]);
-    clSetKernelArg(s_spritesKernel, 4, sizeof(cl_mem), &s_playerBuffer);
-    clSetKernelArg(s_spritesKernel, 10, sizeof(int), &ui_first_frame);
+    CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 0, sizeof(cl_mem), s_frameBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 1, sizeof(cl_mem), s_depthBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 2, sizeof(int), s_screenSize[0]);
+    CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 3, sizeof(int), s_screenSize[1]);
+    CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 4, sizeof(cl_mem), s_playerBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 10, sizeof(int), s_ui_first_frame);
+
+    s_Player = (Player){5.5f,5.5f,-1.0f,0.0f,0.0f,0.66f,0.05f,0.03f};
+  }
+  else if(s_mode == RAYTRACER)
+  {
+    CL_CHECK_PROGRAM(s_context, "src/raytracer.cl", s_program, s_device);
+
+    CL_CHECK_KERNEL(s_clearKernel, "clear_buffers");
+    CL_CHECK_KERNEL(s_vertexKernel, "vertex_kernel");
+    CL_CHECK_KERNEL(s_fragmentKernel, "fragment_kernel");
+
+    CL_CHECK_BUFFER(s_frameBuffer, CL_MEM_WRITE_ONLY, s_screenSize[0] * s_screenSize[1] * sizeof(Color), NULL);
+    CL_CHECK_BUFFER(s_depthBuffer, CL_MEM_READ_WRITE, sizeof(cl_uint) * s_screenSize[0] * s_screenSize[1], NULL);
+
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 0, sizeof(cl_mem), s_frameBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 1, sizeof(cl_mem), s_depthBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 2, sizeof(int), s_screenSize[0]);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 3, sizeof(int), s_screenSize[1]);
+    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 4, sizeof(Color), ((Color){0,0,0,255}));
   }
 
-  Image img = GenImageColor(s_screenResolution[0], s_screenResolution[1], s_backgroundColor);
+  if(s_mode == RASTERIZER || s_mode == RAYTRACER)
+  {
+    float near_plane = 0.001f;
+    float far_plane = 1000.0f;
+    float fov = 90.0f;
+    float width = s_screenSize[0];
+    float height = s_screenSize[1];
+
+    s_camera.Position = (Vec3){0.0f, 0.0f, 0.0f};
+    s_camera.WorldUp = (Vec3){0.0f, 1.0f, 0.0f};
+    s_camera.Front = (Vec3){0.0f, 0.0f, 1.0f};
+    s_camera.aspect_ratio = (float)width / (float)height;
+    s_camera.near_plane = near_plane;
+    s_camera.far_plane = far_plane;
+    s_camera.fov = fov;
+    s_camera.fov_rad = DegToRad(s_camera.fov);  
+    s_camera.proj = MatPerspective(s_camera.fov_rad, s_camera.aspect_ratio, s_camera.near_plane, s_camera.far_plane);
+    s_camera.look_at = MatLookAt(s_camera.Position, Vec3Add(s_camera.Position, s_camera.Front), s_camera.WorldUp);
+    s_camera.yaw = 90.0f;
+    s_camera.pitch = 0.0f;
+    s_camera.speed = 2.0f;
+    s_camera.sens = 0.1f;
+    s_camera.lastX = width / 2.0f;
+    s_camera.lastY = height / 2.0f;
+    s_camera.firstMouse = true;
+    s_camera.deltaTime = 1.0/60.0f;
+
+    CL_CHECK_BUFFER(s_projectionBuffer, CL_MEM_READ_ONLY, sizeof(Mat4), NULL);
+    CL_CHECK_BUFFER(s_viewBuffer, CL_MEM_READ_ONLY, sizeof(Mat4), NULL);
+    CL_CHECK_BUFFER(s_cameraPosBuffer, CL_MEM_READ_ONLY, sizeof(Vec3), NULL);
+
+    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 5, sizeof(cl_mem), s_projectionBuffer); 
+    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 6, sizeof(cl_mem), s_viewBuffer); 
+    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 7, sizeof(cl_mem), s_cameraPosBuffer);
+
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 5, sizeof(cl_mem), s_cameraPosBuffer);
+
+    CL_CHECK_WRITE_BUFFER(s_projectionBuffer, CL_FALSE, 0, sizeof(Mat4), s_camera.proj);
+  }
+
+  Image img = GenImageColor(s_screenSize[0], s_screenSize[1], s_backgroundColor);
   s_outputTexture = LoadTextureFromImage(img);
   UnloadImage(img);
 
-  s_pixelBuffer = (Color*)malloc(sizeof(Color)*s_screenResolution[0]*s_screenResolution[1]);
+  s_pixelBuffer = (Color*)malloc(sizeof(Color)*s_screenSize[0]*s_screenSize[1]);
 }
 
-void gfx_start_draw()
+void gfx_start_draw(void)
 {
   if(s_mode == RASTERIZER)
   {
-    clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
+    clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL, s_screenSize, NULL, 0, NULL, NULL);
     clEnqueueNDRangeKernel(s_queue, s_vertexKernel, 1, NULL, &s_totalVerts, NULL, 0, NULL, NULL);
-    clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenResolution, NULL, 0, NULL, NULL);
+    clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenSize, NULL, 0, NULL, NULL);
   }
   else if(s_mode == RAYCASTER)
   {
-    prepareSprites(&s_Player, s_spritesData, s_numSprites, s_spriteOrder);
-
-    clEnqueueWriteBuffer(s_queue,s_spriteOrderBuffer,CL_TRUE,0,s_numSprites * sizeof(int),s_spriteOrder,0, NULL, NULL);
-    clEnqueueNDRangeKernel(s_queue, s_surfaceKernel, 1, NULL, &s_screenResolution[0], NULL, 0, NULL, NULL);
-    clEnqueueNDRangeKernel(s_queue, s_spritesKernel, 1, NULL, &s_screenResolution[0], NULL, 0, NULL, NULL);
+    sortSprites(&s_Player, s_spritesData, s_numSprites, s_spriteOrder);
+  
+    CL_CHECK_WRITE_BUFFER(s_spriteOrderBuffer, CL_FALSE, 0, s_numSprites * sizeof(int), s_spriteOrder);
+    clEnqueueNDRangeKernel(s_queue, s_surfaceKernel, 1, NULL, &s_screenSize[0], NULL, 0, NULL, NULL);
+    clEnqueueNDRangeKernel(s_queue, s_spritesKernel, 1, NULL, &s_screenSize[0], NULL, 0, NULL, NULL);
   }
 
-  clEnqueueReadBuffer(s_queue, s_frameBuffer, CL_TRUE, 0, sizeof(Color)*s_screenResolution[0]*s_screenResolution[1], s_pixelBuffer, 0, NULL, NULL);
+  CL_CHECK(clEnqueueReadBuffer(s_queue, s_frameBuffer, CL_FALSE, 0, sizeof(Color)*s_screenSize[0]*s_screenSize[1], s_pixelBuffer, 0, NULL, NULL));
   clFinish(s_queue);
 
   UpdateTexture(s_outputTexture, s_pixelBuffer);
@@ -320,12 +481,12 @@ void gfx_start_draw()
   DrawTexture(s_outputTexture, 0, 0, WHITE);
 }
 
-void gfx_end_draw()
+void gfx_end_draw(void)
 {
   EndDrawing();
 }
 
-void gfx_close()
+void gfx_close(void)
 {
   free(s_pixelBuffer);
 
@@ -367,7 +528,7 @@ void gfx_close()
   CloseWindow();
 }
 
-void gfx_load_model(const char* filePath, const char* texturePath, f4x4 transform)
+void gfx_load_model(const char* filePath, const char* texturePath, Mat4 transform)
 {
   const struct aiScene* scene = aiImportFile(
       filePath,
@@ -472,7 +633,7 @@ void gfx_load_model(const char* filePath, const char* texturePath, f4x4 transfor
   arrfree(triangles);
 }
 
-void gfx_upload_models_data()
+void gfx_upload_models_data(void)
 {  
   int numModels = arrlen(s_Models);
   s_totalVerts = s_totalTriangles * 3;
@@ -489,87 +650,53 @@ void gfx_upload_models_data()
   s_projectedVertsBuffer = clCreateBuffer(s_context, CL_MEM_READ_WRITE,
                                           sizeof(f4) * s_totalVerts, NULL, NULL);
 
-  clSetKernelArg(s_vertexKernel, 4, sizeof(cl_mem), &s_projectedVertsBuffer);
-  clSetKernelArg(s_fragmentKernel, 1, sizeof(cl_mem), &s_projectedVertsBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 4, sizeof(cl_mem), s_projectedVertsBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 1, sizeof(cl_mem), s_projectedVertsBuffer);
 
-  clSetKernelArg(s_vertexKernel, 0, sizeof(cl_mem), &s_trianglesBuffer);
-  clSetKernelArg(s_vertexKernel, 1, sizeof(cl_mem), &s_modelsBuffer);
-  clSetKernelArg(s_vertexKernel, 2, sizeof(int), &numModels);
-  clSetKernelArg(s_vertexKernel, 3, sizeof(int), &s_totalVerts);
+  CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 0, sizeof(cl_mem), s_trianglesBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 1, sizeof(cl_mem), s_modelsBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 2, sizeof(int), numModels);
+  CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 3, sizeof(int), s_totalVerts);
 
-  clSetKernelArg(s_fragmentKernel, 6, sizeof(cl_mem), &s_trianglesBuffer);
-  clSetKernelArg(s_fragmentKernel, 7, sizeof(cl_mem), &s_modelsBuffer);
-  clSetKernelArg(s_fragmentKernel, 8, sizeof(int), &numModels);
-  clSetKernelArg(s_fragmentKernel, 9, sizeof(cl_mem), &s_pixelsBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 6, sizeof(cl_mem), s_trianglesBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 7, sizeof(cl_mem), s_modelsBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 8, sizeof(int), numModels);
+  CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 9, sizeof(cl_mem), s_pixelsBuffer);
 }
 
-void gfx_print_model_data()
+void gfx_print_model_data(void)
 {
-    for (size_t m = 0; m < arrlen(s_Models); m++) {
-        CustomModel* model = &s_Models[m];
-        printf("Model %zu:\n", m);
-        printf("  Triangles: %d\n", model->triangleCount);
-        printf("  Texture size: %dx%d\n", model->texWidth, model->texHeight);
-        printf("  Transform matrix:\n");
-        MatPrint(&model->transform); 
+  for (size_t m = 0; m < arrlen(s_Models); m++)
+  {
+    CustomModel* model = &s_Models[m];
+    printf("Model %zu:\n", m);
+    printf("  Triangles: %d\n", model->triangleCount);
+    printf("  Texture size: %dx%d\n", model->texWidth, model->texHeight);
+    printf("  Transform matrix:\n");
+    MatPrint(&model->transform); 
 
-        for (int t = 0; t < model->triangleCount; t++) {
-            const Triangle* tri = &s_allTriangles[model->triangleOffset + t];
-            printf("  Triangle %d:\n", t);
-            for (int v = 0; v < 3; v++) {
-                printf("    Vertex %d:\n", v);
-                printf("      Position: (%f, %f, %f)\n",
-                       tri->vertex[v].x,
-                       tri->vertex[v].y,
-                       tri->vertex[v].z);
-                printf("      UV:       (%f, %f)\n",
-                       tri->uv[v].x,
-                       tri->uv[v].y);
-                printf("      Normal:   (%f, %f, %f)\n",
-                       tri->normal[v].x,
-                       tri->normal[v].y,
-                       tri->normal[v].z);
-            }
-        }
-        printf("\n");
+    for (int t = 0; t < model->triangleCount; t++)
+    {
+      const Triangle* tri = &s_allTriangles[model->triangleOffset + t];
+      printf("  Triangle %d:\n", t);
+      for (int v = 0; v < 3; v++)
+      {
+        printf("    Vertex %d:\n", v);
+        printf("      Position: (%f, %f, %f)\n",
+               tri->vertex[v].x,
+               tri->vertex[v].y,
+               tri->vertex[v].z);
+        printf("      UV:       (%f, %f)\n",
+               tri->uv[v].x,
+               tri->uv[v].y);
+        printf("      Normal:   (%f, %f, %f)\n",
+               tri->normal[v].x,
+               tri->normal[v].y,
+               tri->normal[v].z);
+      }
     }
-}
-
-void gfx_init_camera(float fov, float near_plane, float far_plane)
-{
-  float width = s_screenResolution[0];
-  float height = s_screenResolution[1];
-
-  s_camera.Position = (f3){0.0f, 0.0f, 0.0f};
-  s_camera.WorldUp = (f3){0.0f, 1.0f, 0.0f};
-  s_camera.Front = (f3){0.0f, 0.0f, 1.0f};
-  s_camera.aspect_ratio = (float)width / (float)height;
-  s_camera.near_plane = near_plane;
-  s_camera.far_plane = far_plane;
-  s_camera.fov = fov;
-  s_camera.fov_rad = DegToRad(s_camera.fov);  
-  s_camera.proj = MatPerspective(s_camera.fov_rad, s_camera.aspect_ratio, s_camera.near_plane, s_camera.far_plane);
-  s_camera.look_at = MatLookAt(s_camera.Position, f3Add(s_camera.Position, s_camera.Front), s_camera.WorldUp);
-  s_camera.yaw = 90.0f;
-  s_camera.pitch = 0.0f;
-  s_camera.speed = 2.0f;
-  s_camera.sens = 0.1f;
-  s_camera.lastX = width / 2.0f;
-  s_camera.lastY = height / 2.0f;
-  s_camera.firstMouse = true;
-  s_camera.deltaTime = 1.0/60.0f;
-
-  s_projectionBuffer  = clCreateBuffer(s_context, CL_MEM_READ_ONLY, sizeof(f4x4), NULL, &s_err);
-  s_viewBuffer  = clCreateBuffer(s_context, CL_MEM_READ_ONLY, sizeof(f4x4), NULL, &s_err);
-  s_cameraPosBuffer  = clCreateBuffer(s_context, CL_MEM_READ_ONLY, sizeof(f3), NULL, &s_err);
-
-  clSetKernelArg(s_vertexKernel, 5, sizeof(cl_mem), &s_projectionBuffer); 
-  clSetKernelArg(s_vertexKernel, 6, sizeof(cl_mem), &s_viewBuffer); 
-  clSetKernelArg(s_vertexKernel, 7, sizeof(cl_mem), &s_cameraPosBuffer);
-
-  clSetKernelArg(s_fragmentKernel, 5, sizeof(cl_mem), &s_cameraPosBuffer);
-
-  clEnqueueWriteBuffer(s_queue, s_projectionBuffer, CL_TRUE, 0, sizeof(f4x4), &s_camera.proj, 0, NULL, NULL);
+    printf("\n");
+  }
 }
 
 void gfx_move_camera(Movement direction)
@@ -580,7 +707,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER)
     {
-      s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Front, velocity));
+      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Front, velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -593,7 +720,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER)
     {
-      s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Front, -velocity));
+      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Front, -velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -606,7 +733,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER)
     {
-      s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Right, velocity));
+      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Right, velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -619,7 +746,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER)
     {
-      s_camera.Position = f3Add(s_camera.Position, f3MulS(s_camera.Right, -velocity));
+      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Right, -velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -629,7 +756,7 @@ void gfx_move_camera(Movement direction)
     }
   }
 }
-void gfx_update_camera()
+void gfx_update_camera(void)
 {
   if(s_mode == RASTERIZER)
   {
@@ -663,21 +790,19 @@ void gfx_update_camera()
         if (s_camera.pitch < -89.0f) s_camera.pitch = -89.0f;
     }
 
-    f3 front;
+    Vec3 front = {0};
     front.x = cosf(DegToRad(s_camera.yaw)) * cosf(DegToRad(s_camera.pitch));
     front.y = sinf(DegToRad(s_camera.pitch));
     front.z = sinf(DegToRad(s_camera.yaw)) * cosf(DegToRad(s_camera.pitch));
-    s_camera.Front = f3Norm(front);
+    s_camera.Front = Vec3Norm(front);
 
-    s_camera.Right = f3Norm(f3Cross(s_camera.Front, s_camera.WorldUp));
-    s_camera.Up    = f3Norm(f3Cross(s_camera.Right, s_camera.Front));
+    s_camera.Right = Vec3Norm(Vec3Cross(s_camera.Front, s_camera.WorldUp));
+    s_camera.Up    = Vec3Norm(Vec3Cross(s_camera.Right, s_camera.Front));
 
-    s_camera.look_at = MatLookAt(s_camera.Position, f3Add(s_camera.Position, s_camera.Front), s_camera.Up);
+    s_camera.look_at = MatLookAt(s_camera.Position, Vec3Add(s_camera.Position, s_camera.Front), s_camera.Up);
 
-    clEnqueueWriteBuffer(s_queue, s_cameraPosBuffer, CL_TRUE, 0,
-                         sizeof(f3), &s_camera.Position, 0, NULL, NULL);
-    clEnqueueWriteBuffer(s_queue, s_viewBuffer, CL_TRUE, 0,
-                         sizeof(f4x4), &s_camera.look_at, 0, NULL, NULL);
+    CL_CHECK_WRITE_BUFFER(s_cameraPosBuffer, CL_FALSE, 0, sizeof(Vec3), s_camera.Position);
+    CL_CHECK_WRITE_BUFFER(s_viewBuffer, CL_FALSE, 0, sizeof(Mat4), s_camera.look_at);
   }
   else if(s_mode == RAYCASTER)
   {
@@ -691,41 +816,41 @@ void gfx_update_camera()
     s_Player.planeX = s_Player.planeX * cos(rot) - s_Player.planeY * sin(rot);
     s_Player.planeY = oldPlaneX * sin(rot) + s_Player.planeY * cos(rot);
 
-    clEnqueueWriteBuffer(s_queue, s_playerBuffer, CL_TRUE, 0, sizeof(Player), &s_Player, 0, NULL, NULL);
+    CL_CHECK_WRITE_BUFFER(s_playerBuffer, CL_FALSE, 0, sizeof(Player), s_Player);
 
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !ui_anim_playing)
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !s_ui_anim_playing)
     {
-        ui_anim_playing = 1;
-        ui_anim_timer = 0.0f;
-        ui_current_frame = ui_first_frame;
+        s_ui_anim_playing = 1;
+        s_ui_anim_timer = 0.0f;
+        s_ui_current_frame = s_ui_first_frame;
     }
 
-    if (ui_anim_playing)
+    if (s_ui_anim_playing)
     {
-        ui_anim_timer += GetFrameTime();
-        float frameTime = 1.0f / ui_anim_fps;
+        s_ui_anim_timer += GetFrameTime();
+        float frameTime = 1.0f / s_ui_anim_fps;
 
-        while (ui_anim_timer >= frameTime)
+        while (s_ui_anim_timer >= frameTime)
         {
-            ui_anim_timer -= frameTime;
-            ui_current_frame++;
+            s_ui_anim_timer -= frameTime;
+            s_ui_current_frame++;
 
-            if (ui_current_frame > ui_last_frame)
+            if (s_ui_current_frame > s_ui_last_frame)
             {
-                ui_anim_playing = 0;
-                ui_current_frame = ui_first_frame;
+                s_ui_anim_playing = 0;
+                s_ui_current_frame = s_ui_first_frame;
                 break;
             }
         }
     }
 
-    clSetKernelArg(s_spritesKernel,10,sizeof(int),&ui_current_frame);
+    CL_CHECK_SET_KERNEL_ARG(s_spritesKernel,10,sizeof(int),s_ui_current_frame);
   }
 }
 
 void gfx_load_assets(const char* textures[],size_t textures_count,
-                           const char* sprites[],size_t sprites_count,
-                           SpriteData sprites_data[],size_t sprites_data_count)
+                     const char* sprites[],size_t sprites_count,
+                     SpriteData sprites_data[],size_t sprites_data_count)
 {
   for (size_t i = 0; i < textures_count; ++i)
   {
@@ -806,19 +931,19 @@ void gfx_load_assets(const char* textures[],size_t textures_count,
 
   memcpy(s_spritesData, sprites_data, sprites_count * sizeof(SpriteData));
 
-  clSetKernelArg(s_surfaceKernel, 7, sizeof(cl_mem), &s_textureBuffer);
-  clSetKernelArg(s_surfaceKernel, 8, sizeof(cl_mem), &s_spritesBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 7, sizeof(cl_mem), s_textureBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_surfaceKernel, 8, sizeof(cl_mem), s_spritesBuffer);
 
-  clSetKernelArg(s_spritesKernel, 5, sizeof(cl_mem), &s_spritesDataBuffer);
-  clSetKernelArg(s_spritesKernel, 6, sizeof(cl_mem), &s_spriteOrderBuffer);
-  clSetKernelArg(s_spritesKernel, 7, sizeof(int), &sprites_count);
-  clSetKernelArg(s_spritesKernel, 8, sizeof(cl_mem), &s_textureBuffer);
-  clSetKernelArg(s_spritesKernel, 9, sizeof(cl_mem), &s_spritesBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 5, sizeof(cl_mem), s_spritesDataBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 6, sizeof(cl_mem), s_spriteOrderBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 7, sizeof(int), sprites_count);
+  CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 8, sizeof(cl_mem), s_textureBuffer);
+  CL_CHECK_SET_KERNEL_ARG(s_spritesKernel, 9, sizeof(cl_mem), s_spritesBuffer);
 }
 
 static int tile_size = 20;
 
-void gfx_draw_map_state()
+void gfx_draw_map_state(void)
 {
   int y_offset = 0;
 

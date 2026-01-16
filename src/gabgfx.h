@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#include "gab_math.h"
+#include "gabmath.h"
 #include "raylib.h"
 #include "CL/cl.h"
 #include "CL/cl_platform.h"
@@ -17,18 +17,19 @@ typedef struct {
 } SpriteData;
 
 void gfx_init(RenderMode mode);
-void gfx_start_draw();
-void gfx_end_draw();
-void gfx_close();
+void gfx_start_draw(void);
+void gfx_end_draw(void);
+void gfx_close(void);
 
-void gfx_init_camera(float fov, float near_plane, float far_plane);
 void gfx_move_camera(Movement direction);
-void gfx_update_camera();
+void gfx_update_camera(void);
 
-void gfx_load_model(const char* filePath,const char* texturePath,f4x4 transform);
-void gfx_upload_models_data();
-void gfx_print_model_data();
+void gfx_load_model(const char* filePath,const char* texturePath, Mat4 transform);
+void gfx_upload_models_data(void);
+void gfx_print_model_data(void);
 
-void gfx_load_assets(const char* textures[],size_t textures_count,const char* sprites[],size_t sprites_count,SpriteData sprites_data[],size_t sprites_data_count);
-void gfx_draw_map_state();
+void gfx_load_assets(const char* textures[],size_t textures_count,
+                     const char* sprites[],size_t sprites_count,
+                     SpriteData sprites_data[],size_t sprites_data_count);
+void gfx_draw_map_state(void);
 
