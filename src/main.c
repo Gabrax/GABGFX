@@ -61,9 +61,9 @@ int main(void)
   SetTargetFPS(60);
   DisableCursor();
 
-  gfx_init(RAYCASTER);
+  gfx_init(RAYTRACER);
 
-  gfx_load_assets(textures, ARR_SIZE(textures), sprites, ARR_SIZE(sprites), sprites_data, ARR_SIZE(sprites_data));
+  /*gfx_load_assets(textures, ARR_SIZE(textures), sprites, ARR_SIZE(sprites), sprites_data, ARR_SIZE(sprites_data));*/
 
   while (!WindowShouldClose())
   {
@@ -74,9 +74,7 @@ int main(void)
     if(IsKeyDown(KEY_A)) gfx_move_camera(LEFT);
     if(IsKeyDown(KEY_D)) gfx_move_camera(RIGHT);
 
-    gfx_update_camera();
-
-    gfx_draw_map_state();
+    /*gfx_update_camera();*/
 
     gfx_end_draw();
   }

@@ -1,6 +1,5 @@
-typedef struct { uchar r, g, b, a; } Pixel;
-typedef struct { float x, y; } Vec2;
-typedef struct { float x, y, z; } Vec3;
+
+typedef struct { uchar r, g, b, a; } Color;
 
 typedef struct Mat4 {
     float x0, x1, x2, x3;
@@ -10,9 +9,9 @@ typedef struct Mat4 {
 } Mat4;
 
 typedef struct {
-    Vec3 vertex[3];
-    Vec3 normal[3];
-    Vec2 uv[3];
+    float3 vertex[3];
+    float3 normal[3];
+    float2 uv[3];
     int modelIdx;
 } Triangle;
 
@@ -28,10 +27,10 @@ typedef struct {
 } CustomModel;
 
 __kernel void clear_buffers(
-    __global Pixel* pixels,
+    __global Color* pixels,
     __global float* depth,
     int width, int height,
-    Pixel color)
+    Color color)
 {
     int x = get_global_id(0);
     int y = get_global_id(1);
@@ -107,7 +106,7 @@ inline float SignedTriangleArea(float2 a, float2 b, float2 c)
     return 0.5f * ((b.x - a.x)*(c.y - a.y) - (b.y - a.y)*(c.x - a.x));
 }
 
-inline Pixel sample_texture(__global Pixel* texture, int texWidth, int texHeight, float2 uv)
+inline Color sample_texture(__global Color* texture, int texWidth, int texHeight, float2 uv)
 {
   uv.x = clamp(uv.x, 0.001f, 0.999f);
   uv.y = clamp(uv.y, 0.001f, 0.999f);
@@ -119,7 +118,7 @@ inline Pixel sample_texture(__global Pixel* texture, int texWidth, int texHeight
 }
 
 __kernel void fragment_kernel(
-    __global Pixel* pixels,
+    __global Color* pixels,
     __global float4* projVerts,
     int width,
     int height,
@@ -128,7 +127,7 @@ __kernel void fragment_kernel(
     __global Triangle* tris2,
     __global CustomModel* models,
     int numModels, 
-    __global Pixel* textures)
+    __global Color* textures)
 {
     int x = get_global_id(0);
     int y = get_global_id(1);
@@ -197,7 +196,7 @@ __kernel void fragment_kernel(
 
                     float3 texColor;
                     if (tw > 0 && th > 0) {
-                        Pixel texel = sample_texture(&textures[texOffset], tw, th, uv);
+                        Color texel = sample_texture(&textures[texOffset], tw, th, uv);
                         texColor = (float3){texel.r, texel.g, texel.b} / 255.0f;
                     } else {
                         texColor = (float3)(0.8f, 0.8f, 0.8f);
@@ -206,7 +205,7 @@ __kernel void fragment_kernel(
                     float light_intensity = fmax(0.1f, dot(norm, dirToLight));
                     float3 finalColor = texColor * light_intensity;
 
-                    pixels[idx] = (Pixel){
+                    pixels[idx] = (Color){
                         (uchar)(finalColor.x * 255),
                         (uchar)(finalColor.y * 255),
                         (uchar)(finalColor.z * 255),

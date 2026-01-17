@@ -359,7 +359,6 @@ void gfx_init(RenderMode mode)
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 2, sizeof(int), s_screenSize[0]);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 3, sizeof(int), s_screenSize[1]);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 4, sizeof(cl_mem), s_depthBuffer);
-
   }
   else if(s_mode == RAYCASTER)
   {
@@ -395,21 +394,20 @@ void gfx_init(RenderMode mode)
   {
     CL_CHECK_PROGRAM(s_context, "src/raytracer.cl", s_program, s_device);
 
-    CL_CHECK_KERNEL(s_clearKernel, "clear_buffers");
-    CL_CHECK_KERNEL(s_vertexKernel, "vertex_kernel");
+    /*CL_CHECK_KERNEL(s_clearKernel, "clear_buffers");*/
+    /*CL_CHECK_KERNEL(s_vertexKernel, "vertex_kernel");*/
     CL_CHECK_KERNEL(s_fragmentKernel, "fragment_kernel");
 
     CL_CHECK_BUFFER(s_frameBuffer, CL_MEM_WRITE_ONLY, s_screenSize[0] * s_screenSize[1] * sizeof(Color), NULL);
     CL_CHECK_BUFFER(s_depthBuffer, CL_MEM_READ_WRITE, sizeof(cl_uint) * s_screenSize[0] * s_screenSize[1], NULL);
 
-    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 0, sizeof(cl_mem), s_frameBuffer);
-    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 1, sizeof(cl_mem), s_depthBuffer);
-    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 2, sizeof(int), s_screenSize[0]);
-    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 3, sizeof(int), s_screenSize[1]);
-    CL_CHECK_SET_KERNEL_ARG(s_clearKernel, 4, sizeof(Color), ((Color){0,0,0,255}));
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 0, sizeof(cl_mem), s_frameBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 1, sizeof(cl_mem), s_depthBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 2, sizeof(int), s_screenSize[0]);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 3, sizeof(int), s_screenSize[1]);
   }
 
-  if(s_mode == RASTERIZER || s_mode == RAYTRACER)
+  if(s_mode == RASTERIZER /*|| s_mode == RAYTRACER*/)
   {
     float near_plane = 0.001f;
     float far_plane = 1000.0f;
@@ -471,6 +469,10 @@ void gfx_start_draw(void)
     CL_CHECK_WRITE_BUFFER(s_spriteOrderBuffer, CL_FALSE, 0, s_numSprites * sizeof(int), s_spriteOrder);
     clEnqueueNDRangeKernel(s_queue, s_surfaceKernel, 1, NULL, &s_screenSize[0], NULL, 0, NULL, NULL);
     clEnqueueNDRangeKernel(s_queue, s_spritesKernel, 1, NULL, &s_screenSize[0], NULL, 0, NULL, NULL);
+  }
+  else if(s_mode == RAYTRACER)
+  {
+    clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenSize, NULL, 0, NULL, NULL);
   }
 
   CL_CHECK(clEnqueueReadBuffer(s_queue, s_frameBuffer, CL_FALSE, 0, sizeof(Color)*s_screenSize[0]*s_screenSize[1], s_pixelBuffer, 0, NULL, NULL));
@@ -705,7 +707,7 @@ void gfx_move_camera(Movement direction)
 
   if (direction == FORWARD)
   {
-    if(s_mode == RASTERIZER)
+    if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
       s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Front, velocity));
     }
@@ -718,7 +720,7 @@ void gfx_move_camera(Movement direction)
   }
   if (direction == BACKWARD)
   {
-    if(s_mode == RASTERIZER)
+    if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
       s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Front, -velocity));
     }
@@ -731,7 +733,7 @@ void gfx_move_camera(Movement direction)
   }
   if (direction == LEFT)
   {
-    if(s_mode == RASTERIZER)
+    if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
       s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Right, velocity));
     }
@@ -744,7 +746,7 @@ void gfx_move_camera(Movement direction)
   }
   if (direction == RIGHT)
   {
-    if(s_mode == RASTERIZER)
+    if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
       s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Right, -velocity));
     }
@@ -758,7 +760,7 @@ void gfx_move_camera(Movement direction)
 }
 void gfx_update_camera(void)
 {
-  if(s_mode == RASTERIZER)
+  if(s_mode == RASTERIZER || s_mode == RAYTRACER)
   {
     float mouseX = GetMouseX();
     float mouseY = GetMouseY();
