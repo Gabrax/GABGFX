@@ -1,11 +1,17 @@
 #ifndef GABMATH_H
 #define GABMATH_H
 
+#include <stdint.h>
+#include <stdio.h>
+#include <math.h>
+
 float DegToRad(float degrees);
 float RadToDeg(float radians);
 float GCD(float a, float b);
 float LCM(float a, float b);
 void isPrime(int val);
+uint32_t PCG_Hash(uint32_t input);
+float RandomFloat(uint32_t* seed);
 
 typedef struct Vec2 { float x,y; } Vec2;
 typedef struct Vec3 { float x,y,z; } Vec3;
@@ -43,13 +49,12 @@ Mat4 MatRotateZ(const Mat4 mat, float radians);
 Mat4 MatScale(const Mat4 mat, Vec3 scale);
 Mat4 MatTransform(Vec3 position, Vec3 deg_rotation, Vec3 scale);
 Mat4 MatInverseRT(const Mat4* m);
+Mat4 MatInverse(const Mat4* m);
 Mat4 MatLookAt(Vec3 position, Vec3 target, Vec3 up);
 
 #endif // GABMATH_H
 
 #ifdef GABMATH_IMPLEMENTATION
-#include <stdio.h>
-#include <math.h>
 
 float DegToRad(float degrees)
 {
@@ -80,7 +85,17 @@ void isPrime(int val)
 
   if(count == 2) printf("%d ", val);
 }
-
+uint32_t PCG_Hash(uint32_t input)
+{
+  uint32_t state = input * 747796405u + 2891336453u;
+  uint32_t word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+  return (word >> 22u) ^ word;
+}
+float RandomFloat(uint32_t* seed)
+{
+  *seed = PCG_Hash(*seed);
+  return (float)(*seed) * (1.0f / 4294967296.0f); // [0,1)
+}
 void Vec2Print(Vec2* v)
 {
   printf("[ %f %f ]\n", v->x,v->y);
@@ -266,6 +281,141 @@ Mat4 MatInverseRT(const Mat4* m)
   inv.f[3][0] = 0.0f; inv.f[3][1] = 0.0f; inv.f[3][2] = 0.0f; inv.f[3][3] = 1.0f;
 
   return inv;
+}
+Mat4 MatInverse(const Mat4* m)
+{
+    Mat4 inv;
+    float det;
+
+    inv.f[0][0] =  m->f[1][1] * m->f[2][2] * m->f[3][3] -
+                   m->f[1][1] * m->f[2][3] * m->f[3][2] -
+                   m->f[2][1] * m->f[1][2] * m->f[3][3] +
+                   m->f[2][1] * m->f[1][3] * m->f[3][2] +
+                   m->f[3][1] * m->f[1][2] * m->f[2][3] -
+                   m->f[3][1] * m->f[1][3] * m->f[2][2];
+
+    inv.f[0][1] = -m->f[0][1] * m->f[2][2] * m->f[3][3] +
+                   m->f[0][1] * m->f[2][3] * m->f[3][2] +
+                   m->f[2][1] * m->f[0][2] * m->f[3][3] -
+                   m->f[2][1] * m->f[0][3] * m->f[3][2] -
+                   m->f[3][1] * m->f[0][2] * m->f[2][3] +
+                   m->f[3][1] * m->f[0][3] * m->f[2][2];
+
+    inv.f[0][2] =  m->f[0][1] * m->f[1][2] * m->f[3][3] -
+                   m->f[0][1] * m->f[1][3] * m->f[3][2] -
+                   m->f[1][1] * m->f[0][2] * m->f[3][3] +
+                   m->f[1][1] * m->f[0][3] * m->f[3][2] +
+                   m->f[3][1] * m->f[0][2] * m->f[1][3] -
+                   m->f[3][1] * m->f[0][3] * m->f[1][2];
+
+    inv.f[0][3] = -m->f[0][1] * m->f[1][2] * m->f[2][3] +
+                   m->f[0][1] * m->f[1][3] * m->f[2][2] +
+                   m->f[1][1] * m->f[0][2] * m->f[2][3] -
+                   m->f[1][1] * m->f[0][3] * m->f[2][2] -
+                   m->f[2][1] * m->f[0][2] * m->f[1][3] +
+                   m->f[2][1] * m->f[0][3] * m->f[1][2];
+
+    inv.f[1][0] = -m->f[1][0] * m->f[2][2] * m->f[3][3] +
+                   m->f[1][0] * m->f[2][3] * m->f[3][2] +
+                   m->f[2][0] * m->f[1][2] * m->f[3][3] -
+                   m->f[2][0] * m->f[1][3] * m->f[3][2] -
+                   m->f[3][0] * m->f[1][2] * m->f[2][3] +
+                   m->f[3][0] * m->f[1][3] * m->f[2][2];
+
+    inv.f[1][1] =  m->f[0][0] * m->f[2][2] * m->f[3][3] -
+                   m->f[0][0] * m->f[2][3] * m->f[3][2] -
+                   m->f[2][0] * m->f[0][2] * m->f[3][3] +
+                   m->f[2][0] * m->f[0][3] * m->f[3][2] +
+                   m->f[3][0] * m->f[0][2] * m->f[2][3] -
+                   m->f[3][0] * m->f[0][3] * m->f[2][2];
+
+    inv.f[1][2] = -m->f[0][0] * m->f[1][2] * m->f[3][3] +
+                   m->f[0][0] * m->f[1][3] * m->f[3][2] +
+                   m->f[1][0] * m->f[0][2] * m->f[3][3] -
+                   m->f[1][0] * m->f[0][3] * m->f[3][2] -
+                   m->f[3][0] * m->f[0][2] * m->f[1][3] +
+                   m->f[3][0] * m->f[0][3] * m->f[1][2];
+
+    inv.f[1][3] =  m->f[0][0] * m->f[1][2] * m->f[2][3] -
+                   m->f[0][0] * m->f[1][3] * m->f[2][2] -
+                   m->f[1][0] * m->f[0][2] * m->f[2][3] +
+                   m->f[1][0] * m->f[0][3] * m->f[2][2] +
+                   m->f[2][0] * m->f[0][2] * m->f[1][3] -
+                   m->f[2][0] * m->f[0][3] * m->f[1][2];
+
+    inv.f[2][0] =  m->f[1][0] * m->f[2][1] * m->f[3][3] -
+                   m->f[1][0] * m->f[2][3] * m->f[3][1] -
+                   m->f[2][0] * m->f[1][1] * m->f[3][3] +
+                   m->f[2][0] * m->f[1][3] * m->f[3][1] +
+                   m->f[3][0] * m->f[1][1] * m->f[2][3] -
+                   m->f[3][0] * m->f[1][3] * m->f[2][1];
+
+    inv.f[2][1] = -m->f[0][0] * m->f[2][1] * m->f[3][3] +
+                   m->f[0][0] * m->f[2][3] * m->f[3][1] +
+                   m->f[2][0] * m->f[0][1] * m->f[3][3] -
+                   m->f[2][0] * m->f[0][3] * m->f[3][1] -
+                   m->f[3][0] * m->f[0][1] * m->f[2][3] +
+                   m->f[3][0] * m->f[0][3] * m->f[2][1];
+
+    inv.f[2][2] =  m->f[0][0] * m->f[1][1] * m->f[3][3] -
+                   m->f[0][0] * m->f[1][3] * m->f[3][1] -
+                   m->f[1][0] * m->f[0][1] * m->f[3][3] +
+                   m->f[1][0] * m->f[0][3] * m->f[3][1] +
+                   m->f[3][0] * m->f[0][1] * m->f[1][3] -
+                   m->f[3][0] * m->f[0][3] * m->f[1][1];
+
+    inv.f[2][3] = -m->f[0][0] * m->f[1][1] * m->f[2][3] +
+                   m->f[0][0] * m->f[1][3] * m->f[2][1] +
+                   m->f[1][0] * m->f[0][1] * m->f[2][3] -
+                   m->f[1][0] * m->f[0][3] * m->f[2][1] -
+                   m->f[2][0] * m->f[0][1] * m->f[1][3] +
+                   m->f[2][0] * m->f[0][3] * m->f[1][1];
+
+    inv.f[3][0] = -m->f[1][0] * m->f[2][1] * m->f[3][2] +
+                   m->f[1][0] * m->f[2][2] * m->f[3][1] +
+                   m->f[2][0] * m->f[1][1] * m->f[3][2] -
+                   m->f[2][0] * m->f[1][2] * m->f[3][1] -
+                   m->f[3][0] * m->f[1][1] * m->f[2][2] +
+                   m->f[3][0] * m->f[1][2] * m->f[2][1];
+
+    inv.f[3][1] =  m->f[0][0] * m->f[2][1] * m->f[3][2] -
+                   m->f[0][0] * m->f[2][2] * m->f[3][1] -
+                   m->f[2][0] * m->f[0][1] * m->f[3][2] +
+                   m->f[2][0] * m->f[0][2] * m->f[3][1] +
+                   m->f[3][0] * m->f[0][1] * m->f[2][2] -
+                   m->f[3][0] * m->f[0][2] * m->f[2][1];
+
+    inv.f[3][2] = -m->f[0][0] * m->f[1][1] * m->f[3][2] +
+                   m->f[0][0] * m->f[1][2] * m->f[3][1] +
+                   m->f[1][0] * m->f[0][1] * m->f[3][2] -
+                   m->f[1][0] * m->f[0][2] * m->f[3][1] -
+                   m->f[3][0] * m->f[0][1] * m->f[1][2] +
+                   m->f[3][0] * m->f[0][2] * m->f[1][1];
+
+    inv.f[3][3] =  m->f[0][0] * m->f[1][1] * m->f[2][2] -
+                   m->f[0][0] * m->f[1][2] * m->f[2][1] -
+                   m->f[1][0] * m->f[0][1] * m->f[2][2] +
+                   m->f[1][0] * m->f[0][2] * m->f[2][1] +
+                   m->f[2][0] * m->f[0][1] * m->f[1][2] -
+                   m->f[2][0] * m->f[0][2] * m->f[1][1];
+
+    det = m->f[0][0] * inv.f[0][0] +
+          m->f[0][1] * inv.f[1][0] +
+          m->f[0][2] * inv.f[2][0] +
+          m->f[0][3] * inv.f[3][0];
+
+    if (det == 0.0f) {
+        // macierz osobliwa — brak odwrotności
+        return (Mat4){0};
+    }
+
+    det = 1.0f / det;
+
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++)
+            inv.f[i][j] *= det;
+
+    return inv;
 }
 Mat4 MatLookAt(Vec3 position, Vec3 target, Vec3 up)
 {

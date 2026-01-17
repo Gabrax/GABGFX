@@ -156,12 +156,14 @@ switch(error){
 } while (0)
 
 #define CL_CHECK_WRITE_BUFFER(buffer,block,offset,arg_size,arg) do { \
-    s_err = clEnqueueWriteBuffer(s_queue, buffer, block, \
-                                 offset, arg_size, &arg, 0, NULL, NULL); \
+    s_err = clEnqueueWriteBuffer( \
+        s_queue, buffer, block, offset, arg_size, arg, \
+        0, NULL, NULL \
+    ); \
     if (s_err != CL_SUCCESS) { \
-        printf("Failed to set arg '%s': at %s:%d\n", \
+        printf("Failed to write buffer '%s': %s:%d\n", \
                #arg, __FILE__, __LINE__); \
-        printf("OpenCL error :%s\n",getErrorString(s_err)); \
+        printf("OpenCL error: %s\n", getErrorString(s_err)); \
         exit(1); \
     } \
 } while(0)
@@ -196,11 +198,14 @@ static cl_mem s_depthBuffer;
 static cl_mem s_projectedVertsBuffer;
 static cl_mem s_fragPosBuffer;
 static cl_mem s_projectionBuffer;
+static cl_mem s_inverseProjectionBuffer;
 static cl_mem s_viewBuffer;
+static cl_mem s_inverseViewBuffer;
 static cl_mem s_cameraPosBuffer;
 static cl_mem s_trianglesBuffer;
 static cl_mem s_pixelsBuffer;
 static cl_mem s_modelsBuffer;
+static cl_mem s_spheresBuffer;
 
 static cl_mem s_playerBuffer;
 static cl_mem s_spritesBuffer;
@@ -211,35 +216,54 @@ static cl_mem s_spriteOrderBuffer;
 static cl_mem s_spriteDistanceBuffer;
 
 typedef struct {
-  Vec3 Position, Front, Up, Right, WorldUp;
-  Mat4 proj, look_at;
-  float near_plane, far_plane, fov, fov_rad, aspect_ratio, yaw, pitch, speed, sens, lastX, lastY, deltaTime;
+  Vec3 pos, front, up, right, world_up;
+  Mat4 proj, inverse_proj, view, inverse_view;
+  float near_plane, far_plane;
+  float fov, fov_rad;
+  float aspect_ratio;
+  float yaw, pitch, speed, sens, lastX, lastY;
   bool firstMouse;
+  float deltaTime;
 } CustomCamera;
 
 static CustomCamera s_camera = {0};
 
 typedef struct {
-    Vec3 vertex[3]; 
-    Vec3 normal[3];
-    Vec2 uv[3];
-    int modelIdx;
+  Vec3 vertex[3]; 
+  Vec3 normal[3];
+  Vec2 uv[3];
+  int modelIdx;
 } Triangle;
 
 typedef struct {
-  int triangleOffset, triangleCount, vertexOffset, vertexCount, pixelOffset, texWidth, texHeight;
+  int triangleOffset, triangleCount;
+  int vertexOffset, vertexCount;
+  int pixelOffset, texWidth, texHeight;
   Mat4 transform;
 } CustomModel;
 
-typedef struct {
-    int offset, width, height;
-} Sprite;
+typedef struct { int offset, width, height; } Sprite;
 
 typedef struct { float dist; int index; } SpriteSort;
 
 typedef struct {
-    float x, y, dirX, dirY, planeX, planeY, moveSpeed, rotSpeed;
+  float x, y;
+  float dirX, dirY;
+  float planeX, planeY;
+  float moveSpeed, rotSpeed;
 } Player;
+
+typedef struct {
+  Vec3 Albedo;
+} CustomMaterial;
+
+typedef struct {
+  Vec3 pos;
+  float radius;
+  CustomMaterial material;
+} Sphere;
+
+static Sphere* s_Spheres = NULL;
 
 static Color s_backgroundColor;
 static size_t s_screenSize[2];
@@ -405,9 +429,24 @@ void gfx_init(RenderMode mode)
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 1, sizeof(cl_mem), s_depthBuffer);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 2, sizeof(int), s_screenSize[0]);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 3, sizeof(int), s_screenSize[1]);
+
+    Sphere sphere1 = (Sphere){ 0.0f, 2.0f, -2.0f, 0.5, (CustomMaterial){1.0,0.0,1.0}};
+
+    arrpush(s_Spheres, sphere1);
+
+    Sphere sphere2 = (Sphere){ 0.0f, -3.0f, -2.0f, 2.5, (CustomMaterial){1.0,1.0,1.0}};
+
+    arrpush(s_Spheres, sphere2);
+
+    CL_CHECK_BUFFER(s_spheresBuffer,CL_MEM_READ_ONLY,sizeof(Sphere) * arrlen(s_Spheres),NULL);
+    CL_CHECK_WRITE_BUFFER(s_spheresBuffer, CL_TRUE, 0, sizeof(Sphere) * arrlen(s_Spheres), s_Spheres);
+
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 9, sizeof(cl_mem), s_spheresBuffer);
+    uint32_t size = arrlen(s_Spheres);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 10, sizeof(uint32_t), size);
   }
 
-  if(s_mode == RASTERIZER /*|| s_mode == RAYTRACER*/)
+  if(s_mode == RASTERIZER || s_mode == RAYTRACER)
   {
     float near_plane = 0.001f;
     float far_plane = 1000.0f;
@@ -415,16 +454,17 @@ void gfx_init(RenderMode mode)
     float width = s_screenSize[0];
     float height = s_screenSize[1];
 
-    s_camera.Position = (Vec3){0.0f, 0.0f, 0.0f};
-    s_camera.WorldUp = (Vec3){0.0f, 1.0f, 0.0f};
-    s_camera.Front = (Vec3){0.0f, 0.0f, 1.0f};
+    s_camera.pos = (Vec3){0.0f, 0.0f, 0.0f};
+    s_camera.world_up = (Vec3){0.0f, 1.0f, 0.0f};
+    s_camera.front = (Vec3){0.0f, 0.0f, 1.0f};
     s_camera.aspect_ratio = (float)width / (float)height;
     s_camera.near_plane = near_plane;
     s_camera.far_plane = far_plane;
     s_camera.fov = fov;
     s_camera.fov_rad = DegToRad(s_camera.fov);  
     s_camera.proj = MatPerspective(s_camera.fov_rad, s_camera.aspect_ratio, s_camera.near_plane, s_camera.far_plane);
-    s_camera.look_at = MatLookAt(s_camera.Position, Vec3Add(s_camera.Position, s_camera.Front), s_camera.WorldUp);
+    s_camera.inverse_proj = MatInverse(&s_camera.proj);
+    s_camera.view = MatLookAt(s_camera.pos, Vec3Add(s_camera.pos, s_camera.front), s_camera.world_up);
     s_camera.yaw = 90.0f;
     s_camera.pitch = 0.0f;
     s_camera.speed = 2.0f;
@@ -435,16 +475,23 @@ void gfx_init(RenderMode mode)
     s_camera.deltaTime = 1.0/60.0f;
 
     CL_CHECK_BUFFER(s_projectionBuffer, CL_MEM_READ_ONLY, sizeof(Mat4), NULL);
+    CL_CHECK_BUFFER(s_inverseProjectionBuffer, CL_MEM_READ_ONLY, sizeof(Mat4), NULL);
     CL_CHECK_BUFFER(s_viewBuffer, CL_MEM_READ_ONLY, sizeof(Mat4), NULL);
+    CL_CHECK_BUFFER(s_inverseViewBuffer, CL_MEM_READ_ONLY, sizeof(Mat4), NULL);
     CL_CHECK_BUFFER(s_cameraPosBuffer, CL_MEM_READ_ONLY, sizeof(Vec3), NULL);
 
-    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 5, sizeof(cl_mem), s_projectionBuffer); 
-    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 6, sizeof(cl_mem), s_viewBuffer); 
-    CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 7, sizeof(cl_mem), s_cameraPosBuffer);
+    /*CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 5, sizeof(cl_mem), s_projectionBuffer); */
+    /*CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 6, sizeof(cl_mem), s_viewBuffer); */
+    /*CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 7, sizeof(cl_mem), s_cameraPosBuffer);*/
 
-    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 5, sizeof(cl_mem), s_cameraPosBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 4, sizeof(cl_mem), s_projectionBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 5, sizeof(cl_mem), s_inverseProjectionBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 6, sizeof(cl_mem), s_viewBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 7, sizeof(cl_mem), s_inverseViewBuffer);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 8, sizeof(cl_mem), s_cameraPosBuffer);
 
-    CL_CHECK_WRITE_BUFFER(s_projectionBuffer, CL_FALSE, 0, sizeof(Mat4), s_camera.proj);
+    CL_CHECK_WRITE_BUFFER(s_projectionBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.proj);
+    CL_CHECK_WRITE_BUFFER(s_inverseProjectionBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.inverse_proj);
   }
 
   Image img = GenImageColor(s_screenSize[0], s_screenSize[1], s_backgroundColor);
@@ -709,7 +756,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Front, velocity));
+      s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.front, -velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -722,7 +769,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Front, -velocity));
+      s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.front, velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -735,7 +782,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Right, velocity));
+      s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.right, -velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -748,7 +795,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.Position = Vec3Add(s_camera.Position, Vec3MulS(s_camera.Right, -velocity));
+      s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.right, velocity));
     }
     else if(s_mode == RAYCASTER)
     {
@@ -763,7 +810,7 @@ void gfx_update_camera(void)
   if(s_mode == RASTERIZER || s_mode == RAYTRACER)
   {
     float mouseX = GetMouseX();
-    float mouseY = GetMouseY();
+    float mouseY = -GetMouseY();
     bool constrainPitch = true;
 
     float xoffset, yoffset;
@@ -796,15 +843,18 @@ void gfx_update_camera(void)
     front.x = cosf(DegToRad(s_camera.yaw)) * cosf(DegToRad(s_camera.pitch));
     front.y = sinf(DegToRad(s_camera.pitch));
     front.z = sinf(DegToRad(s_camera.yaw)) * cosf(DegToRad(s_camera.pitch));
-    s_camera.Front = Vec3Norm(front);
+    s_camera.front = Vec3Norm(front);
 
-    s_camera.Right = Vec3Norm(Vec3Cross(s_camera.Front, s_camera.WorldUp));
-    s_camera.Up    = Vec3Norm(Vec3Cross(s_camera.Right, s_camera.Front));
+    s_camera.right = Vec3Norm(Vec3Cross(s_camera.front, s_camera.world_up));
+    s_camera.up    = Vec3Norm(Vec3Cross(s_camera.right, s_camera.front));
 
-    s_camera.look_at = MatLookAt(s_camera.Position, Vec3Add(s_camera.Position, s_camera.Front), s_camera.Up);
+    s_camera.view = MatLookAt(s_camera.pos, Vec3Add(s_camera.pos, s_camera.front), s_camera.up);
 
-    CL_CHECK_WRITE_BUFFER(s_cameraPosBuffer, CL_FALSE, 0, sizeof(Vec3), s_camera.Position);
-    CL_CHECK_WRITE_BUFFER(s_viewBuffer, CL_FALSE, 0, sizeof(Mat4), s_camera.look_at);
+    s_camera.inverse_view = MatInverse(&s_camera.view);
+
+    CL_CHECK_WRITE_BUFFER(s_cameraPosBuffer, CL_FALSE, 0, sizeof(Vec3), &s_camera.pos);
+    CL_CHECK_WRITE_BUFFER(s_viewBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.view);
+    CL_CHECK_WRITE_BUFFER(s_inverseViewBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.inverse_view);
   }
   else if(s_mode == RAYCASTER)
   {
@@ -818,7 +868,7 @@ void gfx_update_camera(void)
     s_Player.planeX = s_Player.planeX * cos(rot) - s_Player.planeY * sin(rot);
     s_Player.planeY = oldPlaneX * sin(rot) + s_Player.planeY * cos(rot);
 
-    CL_CHECK_WRITE_BUFFER(s_playerBuffer, CL_FALSE, 0, sizeof(Player), s_Player);
+    CL_CHECK_WRITE_BUFFER(s_playerBuffer, CL_FALSE, 0, sizeof(Player), &s_Player);
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && !s_ui_anim_playing)
     {

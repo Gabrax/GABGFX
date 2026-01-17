@@ -74,7 +74,7 @@ int main(void)
     if(IsKeyDown(KEY_A)) gfx_move_camera(LEFT);
     if(IsKeyDown(KEY_D)) gfx_move_camera(RIGHT);
 
-    /*gfx_update_camera();*/
+    gfx_update_camera();
 
     gfx_end_draw();
   }
