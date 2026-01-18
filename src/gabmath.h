@@ -10,12 +10,12 @@ float RadToDeg(float radians);
 float GCD(float a, float b);
 float LCM(float a, float b);
 void isPrime(int val);
-uint32_t PCG_Hash(uint32_t input);
-float RandomFloat(uint32_t* seed);
+uint32_t PCG_hash(uint32_t input);
+float random_float(uint32_t* seed);
 
 typedef struct Vec2 { float x,y; } Vec2;
 typedef struct Vec3 { float x,y,z; } Vec3;
-typedef struct f4 { float x,y,z,w; } f4;
+typedef struct Vec4 { float x,y,z,w; } Vec4;
 
 void Vec2Print(Vec2* v);
 void Vec3Print(Vec3* v);
@@ -91,7 +91,7 @@ uint32_t PCG_Hash(uint32_t input)
   uint32_t word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
   return (word >> 22u) ^ word;
 }
-float RandomFloat(uint32_t* seed)
+float random_float(uint32_t* seed)
 {
   *seed = PCG_Hash(*seed);
   return (float)(*seed) * (1.0f / 4294967296.0f); // [0,1)

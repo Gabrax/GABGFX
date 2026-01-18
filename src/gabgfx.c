@@ -206,6 +206,7 @@ static cl_mem s_trianglesBuffer;
 static cl_mem s_pixelsBuffer;
 static cl_mem s_modelsBuffer;
 static cl_mem s_spheresBuffer;
+static cl_mem s_accumulationBuffer;
 
 static cl_mem s_playerBuffer;
 static cl_mem s_spritesBuffer;
@@ -224,6 +225,7 @@ typedef struct {
   float yaw, pitch, speed, sens, lastX, lastY;
   bool firstMouse;
   float deltaTime;
+  bool hasMoved;
 } CustomCamera;
 
 static CustomCamera s_camera = {0};
@@ -255,6 +257,10 @@ typedef struct {
 
 typedef struct {
   Vec3 Albedo;
+  float Roughness;
+  float Metallic;
+  Vec3 EmissionColor;
+  float EmissionPower;
 } CustomMaterial;
 
 typedef struct {
@@ -264,6 +270,8 @@ typedef struct {
 } Sphere;
 
 static Sphere* s_Spheres = NULL;
+
+static uint32_t s_frameIndex = 1;
 
 static Color s_backgroundColor;
 static size_t s_screenSize[2];
@@ -299,6 +307,8 @@ static int s_ui_current_frame = 17;
 static int s_ui_anim_playing = 0;
 static float s_ui_anim_timer = 0.0f;
 static float s_ui_anim_fps   = 6.0f;
+
+static Vec4 zero = { 0.0f, 0.0f, 0.0f, 0.0f };
 
 unsigned char map[11][11] = {
     {1,1,1,1,1,1,1,1,1,1,1},
@@ -422,21 +432,53 @@ void gfx_init(RenderMode mode)
     /*CL_CHECK_KERNEL(s_vertexKernel, "vertex_kernel");*/
     CL_CHECK_KERNEL(s_fragmentKernel, "fragment_kernel");
 
-    CL_CHECK_BUFFER(s_frameBuffer, CL_MEM_WRITE_ONLY, s_screenSize[0] * s_screenSize[1] * sizeof(Color), NULL);
+    CL_CHECK_BUFFER(s_frameBuffer, CL_MEM_WRITE_ONLY, sizeof(Color) * s_screenSize[0] * s_screenSize[1], NULL);
     CL_CHECK_BUFFER(s_depthBuffer, CL_MEM_READ_WRITE, sizeof(cl_uint) * s_screenSize[0] * s_screenSize[1], NULL);
+    CL_CHECK_BUFFER(s_accumulationBuffer, CL_MEM_READ_WRITE, sizeof(Vec4) * s_screenSize[0] * s_screenSize[1], NULL);
 
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 0, sizeof(cl_mem), s_frameBuffer);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 1, sizeof(cl_mem), s_depthBuffer);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 2, sizeof(int), s_screenSize[0]);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 3, sizeof(int), s_screenSize[1]);
 
-    Sphere sphere1 = (Sphere){ 0.0f, 2.0f, -2.0f, 0.5, (CustomMaterial){1.0,0.0,1.0}};
-
+    Sphere sphere1 = {
+        .pos = (Vec3){0.0f, -0.5f, -2.0f},
+        .radius = 0.5f,
+        .material = {
+            .Albedo = (Vec3){0.9f,0.9f,0.9f},
+            .Roughness = 0.0f,
+            .Metallic = 1.0f,
+            .EmissionColor = sphere1.material.Albedo,
+            .EmissionPower = 0.0f
+        }
+    };
     arrpush(s_Spheres, sphere1);
 
-    Sphere sphere2 = (Sphere){ 0.0f, -3.0f, -2.0f, 2.5, (CustomMaterial){1.0,1.0,1.0}};
-
+    Sphere sphere2 = {
+        .pos = (Vec3){-1.0f,-0.5f,-2.0f},
+        .radius = 0.5f,
+        .material = {
+            .Albedo = (Vec3){1.0f,1.0f,0.0f},
+            .Roughness = 0.1f,
+            .Metallic = 0.0f,
+            .EmissionColor = sphere2.material.Albedo,
+            .EmissionPower = 5.0f
+        }
+    };
     arrpush(s_Spheres, sphere2);
+
+    Sphere sphere3 = {
+        .pos = (Vec3){0.0f,-101.0f,-2.0f},
+        .radius = 100.0f,
+        .material = {
+            .Albedo = (Vec3){0.0f,1.0f,1.0f},
+            .Roughness = 0.0f,
+            .Metallic = 0.0f,
+            .EmissionColor = sphere3.material.Albedo,
+            .EmissionPower = 0.0f
+        }
+    };
+    arrpush(s_Spheres, sphere3);
 
     CL_CHECK_BUFFER(s_spheresBuffer,CL_MEM_READ_ONLY,sizeof(Sphere) * arrlen(s_Spheres),NULL);
     CL_CHECK_WRITE_BUFFER(s_spheresBuffer, CL_TRUE, 0, sizeof(Sphere) * arrlen(s_Spheres), s_Spheres);
@@ -444,6 +486,7 @@ void gfx_init(RenderMode mode)
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 9, sizeof(cl_mem), s_spheresBuffer);
     uint32_t size = arrlen(s_Spheres);
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 10, sizeof(uint32_t), size);
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 12, sizeof(cl_mem), s_accumulationBuffer);
   }
 
   if(s_mode == RASTERIZER || s_mode == RAYTRACER)
@@ -519,6 +562,15 @@ void gfx_start_draw(void)
   }
   else if(s_mode == RAYTRACER)
   {
+    if(s_camera.hasMoved)
+    {
+      s_frameIndex = 1;
+      clEnqueueFillBuffer(s_queue, s_accumulationBuffer, &zero, sizeof(Vec4),0,sizeof(Vec4) * s_screenSize[0] * s_screenSize[1],0, NULL, NULL);
+    }
+    else s_frameIndex++;
+
+    CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 11, sizeof(uint32_t), s_frameIndex);
+
     clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenSize, NULL, 0, NULL, NULL);
   }
 
@@ -697,7 +749,7 @@ void gfx_upload_models_data(void)
         arrlen(s_Models) * sizeof(CustomModel), s_Models, &s_err);
 
   s_projectedVertsBuffer = clCreateBuffer(s_context, CL_MEM_READ_WRITE,
-                                          sizeof(f4) * s_totalVerts, NULL, NULL);
+                                          sizeof(Vec4) * s_totalVerts, NULL, NULL);
 
   CL_CHECK_SET_KERNEL_ARG(s_vertexKernel, 4, sizeof(cl_mem), s_projectedVertsBuffer);
   CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 1, sizeof(cl_mem), s_projectedVertsBuffer);
@@ -756,6 +808,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
+      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.front, -velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -769,6 +822,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
+      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.front, velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -782,6 +836,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
+      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.right, -velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -795,6 +850,7 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
+      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.right, velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -821,17 +877,19 @@ void gfx_update_camera(void)
         s_camera.firstMouse = false;
     }
 
-    xoffset = s_camera.lastX - mouseX;
-    yoffset = s_camera.lastY - mouseY; 
+    xoffset = (s_camera.lastX - mouseX) * s_camera.sens;
+    yoffset = (s_camera.lastY - mouseY) * s_camera.sens; 
 
     s_camera.lastX = mouseX;
     s_camera.lastY = mouseY;
 
-    xoffset *= s_camera.sens;
-    yoffset *= s_camera.sens;
+    if (fabsf(xoffset) > 0.0001f || fabsf(yoffset) > 0.0001f)
+    {
+      s_camera.hasMoved = true;
 
-    s_camera.yaw   += xoffset;
-    s_camera.pitch += yoffset;
+      s_camera.yaw   += xoffset;
+      s_camera.pitch += yoffset;
+    } else s_camera.hasMoved = false;
 
     if (constrainPitch)
     {
@@ -852,9 +910,12 @@ void gfx_update_camera(void)
 
     s_camera.inverse_view = MatInverse(&s_camera.view);
 
-    CL_CHECK_WRITE_BUFFER(s_cameraPosBuffer, CL_FALSE, 0, sizeof(Vec3), &s_camera.pos);
-    CL_CHECK_WRITE_BUFFER(s_viewBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.view);
-    CL_CHECK_WRITE_BUFFER(s_inverseViewBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.inverse_view);
+    if(s_camera.hasMoved)
+    {
+      CL_CHECK_WRITE_BUFFER(s_cameraPosBuffer, CL_FALSE, 0, sizeof(Vec3), &s_camera.pos);
+      CL_CHECK_WRITE_BUFFER(s_viewBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.view);
+      CL_CHECK_WRITE_BUFFER(s_inverseViewBuffer, CL_FALSE, 0, sizeof(Mat4), &s_camera.inverse_view);
+    }
   }
   else if(s_mode == RAYCASTER)
   {

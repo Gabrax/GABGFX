@@ -67,14 +67,14 @@ int main(void)
 
   while (!WindowShouldClose())
   {
-    gfx_start_draw();
+    gfx_update_camera();
 
     if(IsKeyDown(KEY_W)) gfx_move_camera(FORWARD);
     if(IsKeyDown(KEY_S)) gfx_move_camera(BACKWARD);
     if(IsKeyDown(KEY_A)) gfx_move_camera(LEFT);
     if(IsKeyDown(KEY_D)) gfx_move_camera(RIGHT);
 
-    gfx_update_camera();
+    gfx_start_draw();
 
     gfx_end_draw();
   }
