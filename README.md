@@ -41,6 +41,7 @@ For general build script info run ```sh build.sh --help```
 
 <p>
 <a href="https://github.com/raysan5/raylib">raylib</a> •
+<a href="https://github.com/raysan5/raygui">raygui</a> •
 <a href="https://github.com/KhronosGroup/OpenCL-SDK">OpenCL-SDK</a> •
 <a href="https://github.com/nothings/stb/blob/master/stb_ds.h">stb_ds</a> •
 <a href="https://github.com/assimp/assimp">assimp</a>

@@ -273,18 +273,7 @@ __kernel void fragment_kernel(
 
     CustomMaterial material = s.material;
 
-    float3 Albedo = (float3){
-        material.Albedo.x,
-        material.Albedo.y,
-        material.Albedo.z
-    };
-
-    float3 Emission = (float3){
-        material.EmissionColor.x,
-        material.EmissionColor.y,
-        material.EmissionColor.z
-    };
-
+    float3 Albedo = (float3){material.Albedo.x,material.Albedo.y,material.Albedo.z};
     float metallic  = clamp(material.Metallic,  0.0f, 1.0f);
     float roughness = clamp(material.Roughness, 0.0f, 1.0f);
 
@@ -292,7 +281,6 @@ __kernel void fragment_kernel(
     float cosThetaV = max(dot(normal, V), 0.0f);
 
     float3 F0 = lerp((float3)(0.04f), Albedo, metallic);
-
     float3 F = fresnel_schlick_vec3(cosThetaV, F0);
 
     float3 kd = (1.0f - F) * (1.0f - metallic);
@@ -300,7 +288,7 @@ __kernel void fragment_kernel(
 
     if(material.EmissionPower > 0.0f)
     {
-        color += throughput * Emission * material.EmissionPower;
+        color += throughput * Albedo * material.EmissionPower;
         break;
     }
 
@@ -315,42 +303,42 @@ __kernel void fragment_kernel(
     // MIRROR
     if(material.Roughness < 0.001f && metallic > 0.99f)
     {
-        newDir = reflect_vec(rayDir, normal);
+      newDir = reflect_vec(rayDir, normal);
 
-        throughput *= F;
+      throughput *= F;
 
-        rayOrigin = hitPos + normal * 0.0001f;
-        rayDir    = normalize(newDir);
-        continue;
+      rayOrigin = hitPos + normal * 0.0001f;
+      rayDir    = normalize(newDir);
+      continue;
     }
     // SPECULAR
     if(rand < specularChance)
     {
-        newDir = SampleGGX(normal, roughness, &seed,rayDir);
+      newDir = SampleGGX(normal, roughness, &seed,rayDir);
 
-        float cosThetaL = max(dot(normal, newDir), 0.0f);
+      float cosThetaL = max(dot(normal, newDir), 0.0f);
 
-        float D = GGX_D(normal, newDir, roughness);
-        float G = GGX_G(normal, V, newDir, roughness);
+      float D = GGX_D(normal, newDir, roughness);
+      float G = GGX_G(normal, V, newDir, roughness);
 
-        float3 specularBRDF =
-            (D * G * F) /
-            max(4.0f * cosThetaV * cosThetaL, 0.001f);
+      float3 specularBRDF =
+          (D * G * F) /
+          max(4.0f * cosThetaV * cosThetaL, 0.001f);
 
-        BRDF = specularBRDF;
+      BRDF = specularBRDF;
 
-        pdf = specularChance * GGX_PDF(normal, newDir, roughness,rayDir);
+      pdf = specularChance * GGX_PDF(normal, newDir, roughness,rayDir);
     }
     // DIFFUSE
     else
     {
-        newDir = SampleCosineHemisphere(normal, &seed);
+      newDir = SampleCosineHemisphere(normal, &seed);
 
-        float cosThetaL = max(dot(normal, newDir), 0.0f);
+      float cosThetaL = max(dot(normal, newDir), 0.0f);
 
-        BRDF = diffuseBRDF;
+      BRDF = diffuseBRDF;
 
-        pdf = (1.0f - specularChance) * (cosThetaL / PI);
+      pdf = (1.0f - specularChance) * (cosThetaL / PI);
     }
 
     float cosOut = max(dot(normal, newDir), 0.0f);

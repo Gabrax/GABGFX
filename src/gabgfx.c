@@ -1,4 +1,5 @@
 #include "gabgfx.h"
+#include "raylib.h"
 
 #define GABMATH_IMPLEMENTATION
 #include "gabmath.h"
@@ -11,6 +12,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
+
+#define RAYGUI_IMPLEMENTATION
+#include "raygui.h"
+
 
 const char* getErrorString(cl_int error)
 {
@@ -353,6 +358,9 @@ static inline void sortSprites(
 
 void gfx_init(RenderMode mode)
 {
+  InitWindow(800, 600, "GABGFX");
+  SetTargetFPS(60);
+
   if(!IsWindowReady())
   {
     printf("Initialize window first! - InitWindow()");
@@ -455,7 +463,7 @@ void gfx_init(RenderMode mode)
     arrpush(s_Spheres, sphere1);
 
     Sphere sphere2 = {
-        .pos = (Vec3){-1.0f,-0.5f,-2.0f},
+        .pos = (Vec3){-1.0f,1.0f,-2.0f},
         .radius = 0.5f,
         .material = {
             .Albedo = (Vec3){1.0f,1.0f,0.0f},
@@ -479,6 +487,33 @@ void gfx_init(RenderMode mode)
         }
     };
     arrpush(s_Spheres, sphere3);
+
+    Sphere sphere4 = {
+        .pos = (Vec3){-2.0f,-0.5f,-2.0f},
+        .radius = 0.5f,
+        .material = {
+            .Albedo = (Vec3){0.0f,1.0f,0.0f},
+            .Roughness = 0.1f,
+            .Metallic = 0.0f,
+            .EmissionColor = sphere2.material.Albedo,
+            .EmissionPower = 0.0f
+        }
+    };
+    arrpush(s_Spheres, sphere4);
+
+    Sphere sphere5 = {
+        .pos = (Vec3){-1.0f,-0.5f,-2.0f},
+        .radius = 0.5f,
+        .material = {
+            .Albedo = (Vec3){1.0f,1.0f,0.0f},
+            .Roughness = 0.1f,
+            .Metallic = 0.0f,
+            .EmissionColor = sphere2.material.Albedo,
+            .EmissionPower = 0.0f
+        }
+    };
+    arrpush(s_Spheres, sphere5);
+
 
     CL_CHECK_BUFFER(s_spheresBuffer,CL_MEM_READ_ONLY,sizeof(Sphere) * arrlen(s_Spheres),NULL);
     CL_CHECK_WRITE_BUFFER(s_spheresBuffer, CL_TRUE, 0, sizeof(Sphere) * arrlen(s_Spheres), s_Spheres);
@@ -544,8 +579,40 @@ void gfx_init(RenderMode mode)
   s_pixelBuffer = (Color*)malloc(sizeof(Color)*s_screenSize[0]*s_screenSize[1]);
 }
 
-void gfx_start_draw(void)
+static bool cursorDisabled = false;
+
+static Color color = { 255, 255, 255, 255 };
+static float roughness = 0.5f;
+static float metallic = 0.5f;
+static int selectedSphere = 0;
+
+void gfx_draw(void)
 {
+  if(IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+  {
+    if(!cursorDisabled)
+    {
+      DisableCursor();
+      cursorDisabled = true;
+    }
+    s_camera.hasMoved = true;
+
+    if(IsKeyDown(KEY_W)) gfx_move_camera(FORWARD);
+    if(IsKeyDown(KEY_S)) gfx_move_camera(BACKWARD);
+    if(IsKeyDown(KEY_A)) gfx_move_camera(LEFT);
+    if(IsKeyDown(KEY_D)) gfx_move_camera(RIGHT);
+    gfx_update_camera();
+  }
+  else
+  {
+    s_camera.hasMoved = false;
+    if(cursorDisabled)
+    {
+      EnableCursor();
+      cursorDisabled = false;
+    }
+  }
+
   if(s_mode == RASTERIZER)
   {
     clEnqueueNDRangeKernel(s_queue, s_clearKernel, 2, NULL, s_screenSize, NULL, 0, NULL, NULL);
@@ -570,7 +637,6 @@ void gfx_start_draw(void)
     else s_frameIndex++;
 
     CL_CHECK_SET_KERNEL_ARG(s_fragmentKernel, 11, sizeof(uint32_t), s_frameIndex);
-
     clEnqueueNDRangeKernel(s_queue, s_fragmentKernel, 2, NULL, s_screenSize, NULL, 0, NULL, NULL);
   }
 
@@ -580,10 +646,68 @@ void gfx_start_draw(void)
   UpdateTexture(s_outputTexture, s_pixelBuffer);
   BeginDrawing();
   DrawTexture(s_outputTexture, 0, 0, WHITE);
-}
 
-void gfx_end_draw(void)
-{
+  float panelX = 50;
+  float panelY = 50;
+  float panelWidth = 300;
+  float panelHeight = 220;
+
+  if(!cursorDisabled)
+  {
+    Rectangle panel = {50, 50, 300, 350};
+    GuiGroupBox(panel, "Selected Sphere Material");
+
+    GuiLabel((Rectangle){panel.x + 20, panel.y + 30, 100, 20}, "Sphere Index:");
+
+    GuiSpinner((Rectangle){panel.x + 120, panel.y, 100, 20}, NULL, &selectedSphere, 0, arrlen(s_Spheres)-1,false);
+    int idx = (int)selectedSphere;
+
+    float x = s_Spheres[idx].pos.x;
+    float y = s_Spheres[idx].pos.y;
+    float z = s_Spheres[idx].pos.z;
+
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 30, 260, 20}, "X", NULL, &x, -10, 10);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 60, 260, 20}, "Y", NULL, &y, -10, 10);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 90, 260, 20}, "Z", NULL, &z, -10, 10);
+
+    s_Spheres[idx].pos.x = x;
+    s_Spheres[idx].pos.y = y;
+    s_Spheres[idx].pos.z = z;
+
+    float radius = s_Spheres[idx].radius;
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 120, 260, 20}, "SCALE", NULL, &radius, -100, 100);
+    s_Spheres[idx].radius = radius;
+
+    float r = s_Spheres[idx].material.Albedo.x * 255.0f;
+    float g = s_Spheres[idx].material.Albedo.y * 255.0f;
+    float b = s_Spheres[idx].material.Albedo.z * 255.0f;
+
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 150, 260, 20}, "R", NULL, &r, 0, 255);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 180, 260, 20}, "G", NULL, &g, 0, 255);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 210, 260, 20}, "B", NULL, &b, 0, 255);
+
+    s_Spheres[idx].material.Albedo.x = r / 255.0f;
+    s_Spheres[idx].material.Albedo.y = g / 255.0f;
+    s_Spheres[idx].material.Albedo.z = b / 255.0f;
+
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 240, 260, 20}, "Roughness", NULL, &s_Spheres[idx].material.Roughness, 0.0f, 1.0f);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 270, 260, 20}, "Metallic", NULL, &s_Spheres[idx].material.Metallic, 0.0f, 1.0f);
+
+    float power = s_Spheres[idx].material.EmissionPower;
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 300, 260, 20}, "Emission", NULL, &power, 0.0f, 50.0f);
+    s_Spheres[idx].material.EmissionPower = power;
+
+    Color preview = (Color){
+        (unsigned char)(s_Spheres[idx].material.Albedo.x*255.0f),
+        (unsigned char)(s_Spheres[idx].material.Albedo.y*255.0f),
+        (unsigned char)(s_Spheres[idx].material.Albedo.z*255.0f),
+        255
+    };
+    DrawRectangle(panel.x + 220, panel.y, 60, 60, preview);
+  }
+
+  CL_CHECK_WRITE_BUFFER(s_spheresBuffer, CL_FALSE, 0, sizeof(Sphere) * arrlen(s_Spheres), s_Spheres);
+
   EndDrawing();
 }
 
@@ -808,7 +932,6 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.front, -velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -822,7 +945,6 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.front, velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -836,7 +958,6 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.right, -velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -850,7 +971,6 @@ void gfx_move_camera(Movement direction)
   {
     if(s_mode == RASTERIZER || s_mode == RAYTRACER)
     {
-      s_camera.hasMoved = true;
       s_camera.pos = Vec3Add(s_camera.pos, Vec3MulS(s_camera.right, velocity));
     }
     else if(s_mode == RAYCASTER)
@@ -885,11 +1005,9 @@ void gfx_update_camera(void)
 
     if (fabsf(xoffset) > 0.0001f || fabsf(yoffset) > 0.0001f)
     {
-      s_camera.hasMoved = true;
-
       s_camera.yaw   += xoffset;
       s_camera.pitch += yoffset;
-    } else s_camera.hasMoved = false;
+    } 
 
     if (constrainPitch)
     {

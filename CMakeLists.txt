@@ -65,9 +65,10 @@ set(OPENCL_SDK_FETCH_DEPENDENCIES ON CACHE BOOL "Fetch dependencies automaticall
 FetchContent_MakeAvailable(raylib OpenCL_SDK assimp)
 
 add_subdirectory(vendor/stb_ds)
+add_subdirectory(vendor/raygui)
 
 file(GLOB_RECURSE MY_SOURCES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c")
 
 target_sources("${CMAKE_PROJECT_NAME}" PRIVATE ${MY_SOURCES})
 
-target_link_libraries("${CMAKE_PROJECT_NAME}" PRIVATE assimp raylib OpenCL::OpenCL stb_ds)
+target_link_libraries("${CMAKE_PROJECT_NAME}" PRIVATE assimp raylib OpenCL::OpenCL stb_ds raygui)

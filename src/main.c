@@ -57,26 +57,13 @@ SpriteData sprites_data[] = {
 
 int main(void)
 {
-  InitWindow(800, 600, "GABGFX");
-  SetTargetFPS(60);
-  DisableCursor();
-
   gfx_init(RAYTRACER);
 
   /*gfx_load_assets(textures, ARR_SIZE(textures), sprites, ARR_SIZE(sprites), sprites_data, ARR_SIZE(sprites_data));*/
 
   while (!WindowShouldClose())
   {
-    gfx_update_camera();
-
-    if(IsKeyDown(KEY_W)) gfx_move_camera(FORWARD);
-    if(IsKeyDown(KEY_S)) gfx_move_camera(BACKWARD);
-    if(IsKeyDown(KEY_A)) gfx_move_camera(LEFT);
-    if(IsKeyDown(KEY_D)) gfx_move_camera(RIGHT);
-
-    gfx_start_draw();
-
-    gfx_end_draw();
+    gfx_draw();
   }
 
   gfx_close();

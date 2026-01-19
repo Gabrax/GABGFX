@@ -17,8 +17,7 @@ typedef struct {
 } SpriteData;
 
 void gfx_init(RenderMode mode);
-void gfx_start_draw(void);
-void gfx_end_draw(void);
+void gfx_draw(void);
 void gfx_close(void);
 
 void gfx_move_camera(Movement direction);
