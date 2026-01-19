@@ -264,8 +264,9 @@ typedef struct {
   Vec3 Albedo;
   float Roughness;
   float Metallic;
-  Vec3 EmissionColor;
   float EmissionPower;
+  float Translucent;
+  float IOR;
 } CustomMaterial;
 
 typedef struct {
@@ -456,8 +457,9 @@ void gfx_init(RenderMode mode)
             .Albedo = (Vec3){0.9f,0.9f,0.9f},
             .Roughness = 0.0f,
             .Metallic = 1.0f,
-            .EmissionColor = sphere1.material.Albedo,
-            .EmissionPower = 0.0f
+            .EmissionPower = 0.0f,
+            .Translucent = 0.0f,
+            .IOR = 0.0f
         }
     };
     arrpush(s_Spheres, sphere1);
@@ -469,8 +471,9 @@ void gfx_init(RenderMode mode)
             .Albedo = (Vec3){1.0f,1.0f,0.0f},
             .Roughness = 0.1f,
             .Metallic = 0.0f,
-            .EmissionColor = sphere2.material.Albedo,
-            .EmissionPower = 5.0f
+            .EmissionPower = 5.0f,
+            .Translucent = 0.0f,
+            .IOR = 0.0f
         }
     };
     arrpush(s_Spheres, sphere2);
@@ -482,8 +485,9 @@ void gfx_init(RenderMode mode)
             .Albedo = (Vec3){0.0f,1.0f,1.0f},
             .Roughness = 0.0f,
             .Metallic = 0.0f,
-            .EmissionColor = sphere3.material.Albedo,
-            .EmissionPower = 0.0f
+            .EmissionPower = 0.0f,
+            .Translucent = 0.0f,
+            .IOR = 0.0f
         }
     };
     arrpush(s_Spheres, sphere3);
@@ -495,8 +499,9 @@ void gfx_init(RenderMode mode)
             .Albedo = (Vec3){0.0f,1.0f,0.0f},
             .Roughness = 0.1f,
             .Metallic = 0.0f,
-            .EmissionColor = sphere2.material.Albedo,
-            .EmissionPower = 0.0f
+            .EmissionPower = 0.0f,
+            .Translucent = 0.0f,
+            .IOR = 0.0f
         }
     };
     arrpush(s_Spheres, sphere4);
@@ -508,8 +513,9 @@ void gfx_init(RenderMode mode)
             .Albedo = (Vec3){1.0f,1.0f,0.0f},
             .Roughness = 0.1f,
             .Metallic = 0.0f,
-            .EmissionColor = sphere2.material.Albedo,
-            .EmissionPower = 0.0f
+            .EmissionPower = 0.0f,
+            .Translucent = 0.0f,
+            .IOR = 0.0f
         }
     };
     arrpush(s_Spheres, sphere5);
@@ -580,11 +586,15 @@ void gfx_init(RenderMode mode)
 }
 
 static bool cursorDisabled = false;
+static bool hideGUI = false;
 
-static Color color = { 255, 255, 255, 255 };
 static float roughness = 0.5f;
 static float metallic = 0.5f;
 static int selectedSphere = 0;
+static float panelX = 50;
+static float panelY = 50;
+static float panelWidth = 300;
+static float panelHeight = 220;
 
 void gfx_draw(void)
 {
@@ -612,6 +622,8 @@ void gfx_draw(void)
       cursorDisabled = false;
     }
   }
+
+  if(IsKeyPressed(KEY_F)) hideGUI = !hideGUI;
 
   if(s_mode == RASTERIZER)
   {
@@ -647,15 +659,10 @@ void gfx_draw(void)
   BeginDrawing();
   DrawTexture(s_outputTexture, 0, 0, WHITE);
 
-  float panelX = 50;
-  float panelY = 50;
-  float panelWidth = 300;
-  float panelHeight = 220;
-
-  if(!cursorDisabled)
+  if(!hideGUI)
   {
-    Rectangle panel = {50, 50, 300, 350};
-    GuiGroupBox(panel, "Selected Sphere Material");
+    Rectangle panel = {50, 50, 300, 400};
+    GuiGroupBox(panel, "Selected Sphere Spec");
 
     GuiLabel((Rectangle){panel.x + 20, panel.y + 30, 100, 20}, "Sphere Index:");
 
@@ -666,16 +673,16 @@ void gfx_draw(void)
     float y = s_Spheres[idx].pos.y;
     float z = s_Spheres[idx].pos.z;
 
-    GuiSlider((Rectangle){panel.x + 20, panel.y + 30, 260, 20}, "X", NULL, &x, -10, 10);
-    GuiSlider((Rectangle){panel.x + 20, panel.y + 60, 260, 20}, "Y", NULL, &y, -10, 10);
-    GuiSlider((Rectangle){panel.x + 20, panel.y + 90, 260, 20}, "Z", NULL, &z, -10, 10);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 30, 260, 20}, "X", NULL, &x, -105, 105);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 60, 260, 20}, "Y", NULL, &y, -105, 105);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 90, 260, 20}, "Z", NULL, &z, -105, 105);
 
     s_Spheres[idx].pos.x = x;
     s_Spheres[idx].pos.y = y;
     s_Spheres[idx].pos.z = z;
 
     float radius = s_Spheres[idx].radius;
-    GuiSlider((Rectangle){panel.x + 20, panel.y + 120, 260, 20}, "SCALE", NULL, &radius, -100, 100);
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 120, 260, 20}, "SCALE", NULL, &radius, -105, 105);
     s_Spheres[idx].radius = radius;
 
     float r = s_Spheres[idx].material.Albedo.x * 255.0f;
@@ -696,6 +703,15 @@ void gfx_draw(void)
     float power = s_Spheres[idx].material.EmissionPower;
     GuiSlider((Rectangle){panel.x + 20, panel.y + 300, 260, 20}, "Emission", NULL, &power, 0.0f, 50.0f);
     s_Spheres[idx].material.EmissionPower = power;
+
+    float translucent = s_Spheres[idx].material.Translucent;
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 330, 260, 20}, "Translucent", NULL, &translucent, 0.0f, 1.0f);
+    s_Spheres[idx].material.Translucent = translucent;
+
+    float ior = s_Spheres[idx].material.IOR;
+    GuiSlider((Rectangle){panel.x + 20, panel.y + 360, 260, 20}, "IOR", NULL, &ior, 0.0f, 1.0f);
+    s_Spheres[idx].material.IOR = ior;
+
 
     Color preview = (Color){
         (unsigned char)(s_Spheres[idx].material.Albedo.x*255.0f),

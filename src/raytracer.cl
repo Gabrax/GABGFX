@@ -28,8 +28,9 @@ typedef struct {
   Vec3 Albedo;
   float Roughness;
   float Metallic;
-  Vec3 EmissionColor;
   float EmissionPower;
+  float Translucent;
+  float IOR;
 } CustomMaterial;
 
 typedef struct {
@@ -299,6 +300,77 @@ __kernel void fragment_kernel(
     float3 BRDF;
 
     float rand = RandomFloat(&seed);
+
+    // GLASS
+    if(material.Translucent > 0.99f && material.Roughness < 0.001f)
+    {
+        float eta = material.IOR;
+        float3 N = normal;
+        float3 V = -rayDir;
+
+        bool entering = dot(V, N) > 0.0f;
+        float etaI = entering ? 1.0f : eta;
+        float etaT = entering ? eta : 1.0f;
+
+        if(!entering)
+            N = -N;
+
+        float etaRatio = etaI / etaT;
+
+        float cosTheta = clamp(dot(V, N), 0.0f, 1.0f);
+        float sin2Theta = etaRatio * etaRatio * (1.0f - cosTheta * cosTheta);
+
+        float3 Fglass = fresnel_schlick_vec3(cosTheta, F0);
+
+        // TOTAL INTERNAL REFLECTION
+        if(sin2Theta > 1.0f)
+        {
+            rayDir = normalize(reflect_vec(rayDir, N));
+            throughput *= Fglass;
+        }
+        else
+        {
+            float3 reflDir = reflect_vec(rayDir, N);
+            float3 refrDir = normalize(
+                etaRatio * (-V) +
+                (etaRatio * cosTheta - sqrt(1.0f - sin2Theta)) * N
+            );
+
+            float reflectProb = clamp(
+                max(Fglass.x, max(Fglass.y, Fglass.z)),
+                0.05f,
+                0.95f
+            );
+
+            if(RandomFloat(&seed) < reflectProb)
+            {
+                rayDir = normalize(reflDir);
+                throughput *= Fglass / reflectProb;
+            }
+            else
+            {
+              rayDir = normalize(refrDir);
+
+              // === BEER–LAMBERT ABSORPTION ===
+              if(!entering)
+              {
+                  float distance = hitDistance;
+
+                  float3 colorAbsorption = (float3){0.2f, 0.6f, 1.0f} * 50.0f; 
+
+                  float3 absorption =
+                      exp(-colorAbsorption * distance);
+
+                  throughput *= absorption;
+              }
+
+              throughput *= (1.0f - Fglass) / (1.0f - reflectProb);
+            }
+        }
+
+        rayOrigin = hitPos + rayDir * 0.0001f;
+        continue;
+    }
 
     // MIRROR
     if(material.Roughness < 0.001f && metallic > 0.99f)
