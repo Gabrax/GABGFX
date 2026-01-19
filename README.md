@@ -16,11 +16,19 @@ For general build script info run ```sh build.sh --help```
 
 <div align="center">
   
+## Raytracer
+
+</div>
+
+<p align="center"> <img width="600" height="400" alt="balls" src="https://github.com/user-attachments/assets/df0f0ecf-928f-4454-9b3b-83943adfd9bc" /> </p>
+
+<div align="center">
+  
 ## Rasterizer
 
 </div>
 
-<p align="center"> <img width="600" height="400" alt="Stanford_Lucy" src="https://github.com/user-attachments/assets/38056f20-645d-4ab3-9486-cd8b8112ce48" /> </p>
+<!-- <p align="center"> <img width="600" height="400" alt="Stanford_Lucy" src="https://github.com/user-attachments/assets/38056f20-645d-4ab3-9486-cd8b8112ce48" /> </p> --->
 <p align="center"> <img width="600" height="400" alt="Multiple_textured_models" src="https://github.com/user-attachments/assets/c2811b6d-61e1-4a6e-abaa-3b8114fb4189" /> </p>
 
 <div align="center">
