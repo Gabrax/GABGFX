@@ -1,18 +1,6 @@
-<div align="center">
-  
-## Getting started
-
-</div>
-
 > [!WARNING]
-To run this project Git and CMake are needed <br>
-Only build this project through the script, project is setup to move exe to root directory to with assets
-
-```bash
-curl -O https://raw.githubusercontent.com/Gabrax/GABBS/refs/heads/main/build.sh
-```
-
-For general build script info run ```sh build.sh --help```
+> Dependencies: CMake, C <br>
+> 'res' folder needs to be in the same directory as executable
 
 <div align="center">
   
