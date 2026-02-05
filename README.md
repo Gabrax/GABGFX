@@ -1,6 +1,5 @@
-> [!WARNING]
-> Dependencies: CMake, C <br>
-> 'res' folder needs to be in the same directory as executable
+> [!IMPORTANT]
+> All rights to the assets belong to their respective authors.
 
 <div align="center">
   
